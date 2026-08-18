@@ -1,7 +1,8 @@
 import numpy as np
 import mujoco
+import gym
 
-class DomainRandomizedEnv(ManipulatorEnv):
+class DomainRandomizedEnv(gym.Env):
     def __init__(self, xml_path="manipulator.xml", randomize=True):
         super().__init__(xml_path)
         self.randomize = randomize
