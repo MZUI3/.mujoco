@@ -71,10 +71,21 @@
             </body>
         </body>
 
-        <body name="target_object" pos="0.45 0.0 0.08">
-            <freejoint/>
-            <geom name="object_geom" type="box" size="0.025 0.025 0.025" material="matobject" mass="0.08"/>
+        <body name="target_object1" pos="0.40 0.10 0.08">
+            <joint name="target_free1" type="free"/>
+            <geom name="object1_geom" type="box" size="0.03 0.03 0.03" material="matobject" mass="0.08"/>
         </body>
+
+        <body name="target_object2" pos="0.50 -0.12 0.08">
+            <joint name="target_free2" type="free"/>
+            <geom name="object2_geom" type="sphere" size="0.02" material="matobject" mass="0.05"/>
+        </body>
+
+        <!-- Static obstacle to create varied scenes -->
+        <body name="obstacle" pos="0.35 0.0 0.02">
+            <geom name="obstacle_geom" type="cylinder" size="0.03 0.06" pos="0 0 0" material="matlink3"/>
+        </body>
+
     </worldbody>
 
     <actuator>
