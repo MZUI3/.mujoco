@@ -5,3 +5,4 @@ torch
 matplotlib
 tqdm
 scipy
+stable-baselines3

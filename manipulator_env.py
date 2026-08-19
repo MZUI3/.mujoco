@@ -37,12 +37,22 @@ class DomainRandomizedEnv(gym.Env):
         obs_dim = self.model.nq + self.model.nv
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
 
+        # Body/joint identifiers
         self.base_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "base")
         self.gripper_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "gripper_base")
-        self.target_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target_object")
+
+        # Two target objects (free joints named in XML)
+        self.target_joint_ids = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "target_free1"),
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "target_free2"),
+        ]
+        # their qpos addresses (free joint qpos are 7 long: 3 pos + 4 quat)
+        self.target_qpos_addrs = [int(self.model.jnt_qposadr[jid]) for jid in self.target_joint_ids]
+
+        # obstacle body id
+        self.obstacle_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "obstacle")
 
         self.base_start_pos = self.data.xpos[self.base_body_id].copy()
-        self.target_start_pos = self.data.xpos[self.target_body_id].copy()
         self.ctrl_scale = np.maximum(
             np.abs(self.model.actuator_ctrlrange[:, 0]),
             np.abs(self.model.actuator_ctrlrange[:, 1]),
@@ -52,10 +62,28 @@ class DomainRandomizedEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
-        self.data.xpos[self.target_body_id] = self.target_start_pos
 
+        # Randomize target object positions within reachable workspace box
         if self.randomize:
             self._randomize_dynamics()
+
+        # sample target positions in a semicircular workspace in front of the arm
+        for adr in self.target_qpos_addrs:
+            x = np.random.uniform(0.30, 0.55)
+            y = np.random.uniform(-0.18, 0.18)
+            z = np.random.uniform(0.06, 0.12)
+            # set translation (3) and quaternion (4: identity)
+            self.data.qpos[adr:adr+3] = np.array([x, y, z], dtype=np.float64)
+            self.data.qpos[adr+3:adr+7] = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+
+        # Small random perturbation to obstacle (static body pos change)
+        obs_x = np.random.uniform(0.30, 0.40)
+        obs_y = np.random.uniform(-0.05, 0.05)
+        if self.obstacle_body_id >= 0:
+            self.model.body_pos[self.obstacle_body_id, :2] = np.array([obs_x, obs_y])
+
+        # forward to update derived quantities
+        mujoco.mj_forward(self.model, self.data)
 
         self._step_count = 0
         return self._get_obs(), {}
