@@ -11,6 +11,7 @@ from pathlib import Path
 
 try:
     import mujoco
+    import mujoco.viewer 
     from manipulator_env import DomainRandomizedEnv
 except Exception as e:
     print(f"Missing imports: {e}")
