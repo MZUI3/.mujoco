@@ -1,77 +1,68 @@
-<mujoco model="simple_manipulator">
-    <compiler angle="degree" coordinate="local" inertiafromgeom="true"/>
-
-    <statistic extent="2" meansize=".05"/>
-
-    <option timestep="0.002" solver="Newton" iterations="30" tolerance="1e-10" jacobian="sparse" cone="pyramidal" gravity="0 0 -9.81"/>
+<mujoco model="stable_manipulator">
+    <compiler angle="degree" inertiafromgeom="true" balanceinertia="true" autolimits="true"/>
+    <option timestep="0.002" gravity="0 0 -9.81" iterations="50" solver="CG" tolerance="1e-8"/>
 
     <visual>
-        <rgba haze="0.15 0.25 0.35 1"/>
+        <global offwidth="1280" offheight="960"/>
+        <map znear="0.01" zfar="60" fogstart="8" fogend="30"/>
         <quality shadowsize="2048"/>
-        <map stiffness="700" shadowscale="0.5" fogstart="10" fogend="15" zfar="40" haze="0.3"/>
     </visual>
 
     <default>
-        <joint limited="true" damping="1" armature="0.01"/>
-        <geom rgba="0.7 0.7 0.7 1" condim="4" friction="1 0.5 0.5"/>
-        <motor ctrllimited="true"/>
+        <joint damping="1.2" armature="0.02" limited="true" frictionloss="0.02"/>
+        <geom condim="3" friction="0.8 0.05 0.02" rgba="0.75 0.75 0.8 1"/>
+        <motor ctrllimited="true" ctrlrange="-1 1" forcerange="-5 5"/>
     </default>
 
     <asset>
-        <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="512"/>
-        <texture name="texplane" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2"
-            width="512" height="512" mark="cross" markrgb=".8 .8 .8"/>
-        <material name="matplane" reflectance="0.3" texture="texplane" texrepeat="1 1" texuniform="true"/>
-
-        <material name="matlink1" rgba="0.8 0.2 0.2 1"/>
-        <material name="matlink2" rgba="0.2 0.6 0.8 1"/>
-        <material name="matlink3" rgba="0.2 0.8 0.3 1"/>
-        <material name="matgripper" rgba="0.9 0.9 0.2 1"/>
-        <material name="matobject" rgba="0.9 0.4 0.9 1"/>
+        <texture type="skybox" builtin="gradient" rgb1="0.3 0.45 0.7" rgb2="0.08 0.12 0.18" width="512" height="512"/>
+        <texture name="texplane" type="2d" builtin="checker" rgb1="0.18 0.22 0.28" rgb2="0.10 0.13 0.18" width="256" height="256" mark="cross" markrgb="0.9 0.9 0.9"/>
+        <material name="matplane" texture="texplane" texuniform="true" reflectance="0.15"/>
+        <material name="matbase" rgba="0.27 0.30 0.35 1"/>
+        <material name="matlink1" rgba="0.86 0.32 0.28 1"/>
+        <material name="matlink2" rgba="0.27 0.62 0.88 1"/>
+        <material name="matlink3" rgba="0.30 0.76 0.48 1"/>
+        <material name="matgripper" rgba="0.96 0.83 0.26 1"/>
+        <material name="matobject" rgba="0.96 0.40 0.90 1"/>
     </asset>
 
     <worldbody>
-        <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false"/>
-        <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1"/>
+        <light directional="true" diffuse="0.5 0.5 0.5" specular="0.15 0.15 0.15" pos="0 0 5" dir="0 0 -1"/>
+        <light directional="true" diffuse="0.7 0.7 0.7" pos="2 2 3" dir="-1 -1 -1"/>
 
-        <geom name="ground" type="plane" size="0 0 1" pos="0 0 0" quat="1 0 0 0" material="matplane" condim="3"/>
+        <geom name="ground" type="plane" size="3 3 0.25" pos="0 0 0" material="matplane" condim="3"/>
 
-        <!-- ===================== 매니퓰레이터 베이스 ===================== -->
-        <body name="base" pos="0 0 0.05">
-            <geom name="base_geom" type="cylinder" size="0.08 0.05" rgba="0.3 0.3 0.3 1"/>
+        <body name="base" pos="0 0 0.10">
+            <geom name="base_plate" type="cylinder" size="0.12 0.06" material="matbase"/>
+            <geom name="base_ring" type="cylinder" size="0.08 0.03" pos="0 0 0.04" rgba="0.15 0.17 0.22 1"/>
 
-            <!-- 어깨 관절 (yaw, z축 회전) -->
-            <body name="link1" pos="0 0 0.05">
-                <joint name="shoulder_pan" type="hinge" axis="0 0 1" range="-180 180" pos="0 0 0"/>
-                <geom name="link1_geom" type="capsule" fromto="0 0 0  0 0 0.15" size="0.04" material="matlink1"/>
+            <body name="link1" pos="0 0 0.08">
+                <joint name="shoulder_pan" type="hinge" axis="0 0 1" range="-180 180"/>
+                <geom name="link1_geom" type="capsule" fromto="0 0 0 0 0 0.17" size="0.04" material="matlink1"/>
 
-                <!-- 어깨 pitch 관절 -->
-                <body name="link2" pos="0 0 0.15">
-                    <joint name="shoulder_lift" type="hinge" axis="0 1 0" range="-90 90" pos="0 0 0"/>
-                    <geom name="link2_geom" type="capsule" fromto="0 0 0  0.25 0 0" size="0.035" material="matlink2"/>
+                <body name="link2" pos="0 0 0.17">
+                    <joint name="shoulder_lift" type="hinge" axis="0 1 0" range="-90 90"/>
+                    <geom name="link2_geom" type="capsule" fromto="0 0 0 0.26 0 0" size="0.035" material="matlink2"/>
 
-                    <!-- 팔꿈치 관절 -->
-                    <body name="link3" pos="0.25 0 0">
-                        <joint name="elbow" type="hinge" axis="0 1 0" range="-150 150" pos="0 0 0"/>
-                        <geom name="link3_geom" type="capsule" fromto="0 0 0  0.2 0 0" size="0.03" material="matlink3"/>
+                    <body name="link3" pos="0.26 0 0">
+                        <joint name="elbow" type="hinge" axis="0 1 0" range="-150 150"/>
+                        <geom name="link3_geom" type="capsule" fromto="0 0 0 0.22 0 0" size="0.03" material="matlink3"/>
 
-                        <!-- 손목 관절 -->
-                        <body name="wrist" pos="0.2 0 0">
-                            <joint name="wrist_roll" type="hinge" axis="1 0 0" range="-180 180" pos="0 0 0"/>
-                            <geom name="wrist_geom" type="capsule" fromto="0 0 0  0.08 0 0" size="0.025" material="matgripper"/>
+                        <body name="wrist" pos="0.22 0 0">
+                            <joint name="wrist_roll" type="hinge" axis="1 0 0" range="-180 180"/>
+                            <geom name="wrist_geom" type="capsule" fromto="0 0 0 0.10 0 0" size="0.025" material="matgripper"/>
 
-                            <!-- 그리퍼 -->
-                            <body name="gripper_base" pos="0.08 0 0">
-                                <geom name="gripper_base_geom" type="box" size="0.02 0.05 0.02" material="matgripper"/>
+                            <body name="gripper_base" pos="0.10 0 0">
+                                <geom name="gripper_base_geom" type="box" size="0.02 0.055 0.02" material="matgripper"/>
 
-                                <body name="finger_left" pos="0 0.04 0">
+                                <body name="finger_left" pos="0 0.055 0">
                                     <joint name="finger_left_joint" type="slide" axis="0 1 0" range="0 0.03"/>
-                                    <geom name="finger_left_geom" type="box" size="0.015 0.01 0.04" material="matgripper"/>
+                                    <geom name="finger_left_geom" type="box" size="0.012 0.012 0.045" material="matgripper"/>
                                 </body>
 
-                                <body name="finger_right" pos="0 -0.04 0">
+                                <body name="finger_right" pos="0 -0.055 0">
                                     <joint name="finger_right_joint" type="slide" axis="0 -1 0" range="0 0.03"/>
-                                    <geom name="finger_right_geom" type="box" size="0.015 0.01 0.04" material="matgripper"/>
+                                    <geom name="finger_right_geom" type="box" size="0.012 0.012 0.045" material="matgripper"/>
                                 </body>
                             </body>
                         </body>
@@ -80,22 +71,18 @@
             </body>
         </body>
 
-        <!-- ===================== 집을 물체 ===================== -->
-        <body name="target_object" pos="0.4 0 0.05">
+        <body name="target_object" pos="0.45 0.0 0.08">
             <freejoint/>
-            <geom name="object_geom" type="box" size="0.02 0.02 0.02" material="matobject" mass="0.05"/>
+            <geom name="object_geom" type="box" size="0.025 0.025 0.025" material="matobject" mass="0.08"/>
         </body>
-
     </worldbody>
 
-    <!-- ===================== 액추에이터 ===================== -->
     <actuator>
-        <motor name="act_shoulder_pan" joint="shoulder_pan" ctrlrange="-2 2" gear="50"/>
-        <motor name="act_shoulder_lift" joint="shoulder_lift" ctrlrange="-2 2" gear="50"/>
-        <motor name="act_elbow" joint="elbow" ctrlrange="-2 2" gear="30"/>
-        <motor name="act_wrist_roll" joint="wrist_roll" ctrlrange="-1 1" gear="10"/>
-        <motor name="act_finger_left" joint="finger_left_joint" ctrlrange="0 1" gear="20"/>
-        <motor name="act_finger_right" joint="finger_right_joint" ctrlrange="0 1" gear="20"/>
+        <motor name="act_shoulder_pan" joint="shoulder_pan" gear="60"/>
+        <motor name="act_shoulder_lift" joint="shoulder_lift" gear="60"/>
+        <motor name="act_elbow" joint="elbow" gear="50"/>
+        <motor name="act_wrist_roll" joint="wrist_roll" gear="15"/>
+        <motor name="act_finger_left" joint="finger_left_joint" gear="25"/>
+        <motor name="act_finger_right" joint="finger_right_joint" gear="25"/>
     </actuator>
-
 </mujoco>

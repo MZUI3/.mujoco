@@ -1,17 +1,9 @@
-"""
-Simple visualization for the manipulator using MuJoCo Python viewer.
-Usage:
-    python visualize_manipulator.py
-
-This script creates the DomainRandomizedEnv and launches a MuJoCo viewer if available.
-"""
+"""Simple visualization for the manipulator using MuJoCo's Python viewer."""
 
 import time
-from pathlib import Path
 
 try:
     import mujoco
-    import mujoco.viewer 
     from manipulator_env import DomainRandomizedEnv
 except Exception as e:
     print(f"Missing imports: {e}")
@@ -19,22 +11,30 @@ except Exception as e:
 
 
 def main():
-    # Create env with randomize=False for deterministic visualization
     env = DomainRandomizedEnv(randomize=False, render_mode=None)
+    obs, _ = env.reset()
 
-    # If environment created, try to launch mujoco.viewer
     try:
         print("Launching MuJoCo viewer...")
-        # viewer.launch accepts model and data in many mujoco versions
-        mujoco.viewer.launch(env.model, env.data)
-    except Exception as e:
-        print(f"Could not launch mujoco.viewer: {e}")
-        print("Fallback: step through a few steps and print states (no GUI)")
-        obs, _ = env.reset()
-        for i in range(100):
-            a = env.action_space.sample()
-            obs, r, terminated, truncated, _ = env.step(a)
-            print(f"Step {i+1}: reward={r:.3f}")
+        if hasattr(mujoco, "viewer") and hasattr(mujoco.viewer, "launch_passive"):
+            viewer = mujoco.viewer.launch_passive(env.model, env.data)
+            for _ in range(200):
+                action = np.array([0.15, -0.4, 0.45, -0.2, 0.0, 0.0], dtype=np.float32)
+                obs, reward, terminated, truncated, _ = env.step(action)
+                viewer.sync()
+                time.sleep(0.01)
+                if terminated or truncated:
+                    break
+            viewer.close()
+        else:
+            raise RuntimeError("MuJoCo viewer is not available on this machine")
+    except Exception as exc:
+        print(f"Could not launch mujoco.viewer: {exc}")
+        print("Fallback: step through a few deterministic states (no GUI)")
+        for i in range(50):
+            action = np.array([0.18 * np.sin(i / 8), -0.28, 0.35, -0.15, 0.0, 0.0], dtype=np.float32)
+            obs, r, terminated, truncated, _ = env.step(action)
+            print(f"Step {i + 1}: reward={r:.3f}, base={obs[:2]}")
             time.sleep(0.01)
             if terminated or truncated:
                 break
@@ -42,5 +42,6 @@ def main():
         env.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    import numpy as np
     main()
