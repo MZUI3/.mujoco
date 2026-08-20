@@ -60,4 +60,7 @@ python record_episodes.py --policy ppo --model models/ppo_policy.pt --episodes 3
 echo "[9/10] Pack results"
 mkdir -p results/videos || true
 
-echo "[10/10] Done. Results in: results/ and models/"
+echo "[10/11] Run best checkpoint across experiment conditions"
+python run_best_model_experiments.py --episodes 5 --episode-length 200
+
+echo "[11/11] Done. Results in: results/ and models/"
