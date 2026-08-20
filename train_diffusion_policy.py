@@ -354,6 +354,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", type=int, default=150)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--val_ratio", type=float, default=0.05, help="Fraction of trajectories to hold out for validation (0-1)")
+    parser.add_argument("--val_interval", type=int, default=1, help="Validate every N epochs and use for best model selection")
     
     args = parser.parse_args()
     
@@ -371,12 +373,27 @@ if __name__ == "__main__":
     print(f"  obs_mean: {obs_mean[:3]}...")
     print(f"  obs_std: {obs_std[:3]}...")
     
+    # Split into train/validation trajectories if requested
+    val_trajectories = None
+    if args.val_ratio > 0 and len(trajectories) > 1:
+        import random
+        random.seed(0)
+        n_val = max(1, int(len(trajectories) * args.val_ratio))
+        idxs = list(range(len(trajectories)))
+        random.shuffle(idxs)
+        val_idxs = set(idxs[:n_val])
+        val_trajectories = [trajectories[i] for i in range(len(trajectories)) if i in val_idxs]
+        train_trajectories = [trajectories[i] for i in range(len(trajectories)) if i not in val_idxs]
+        print(f"  Train episodes: {len(train_trajectories)}, Val episodes: {len(val_trajectories)}")
+    else:
+        train_trajectories = trajectories
+    
     # Train policy
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
     
     policy, norm_params = train_diffusion_policy(
-        trajectories=trajectories,
+        trajectories=train_trajectories,
         obs_mean=obs_mean,
         obs_std=obs_std,
         output_dir=args.output_dir,
@@ -385,6 +402,8 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
         device=device,
+        val_trajectories=val_trajectories,
+        val_interval=args.val_interval,
     )
     
     # Save normalization parameters

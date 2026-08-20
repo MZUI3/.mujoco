@@ -23,7 +23,31 @@ class DomainRandomizedEnv(gym.Env):
                 raise FileNotFoundError(f"기본 모델을 찾을 수 없습니다: {default_path}")
             xml_path = str(default_path)
 
-        self.model = mujoco.MjModel.from_xml_path(xml_path)
+        try:
+            # Try to load XML model; wrap errors to provide clearer guidance/fallback
+            self.model = mujoco.MjModel.from_xml_path(xml_path)
+        except Exception as e:
+            # If XML failed, try a compiled .mjb sibling file (common fallback)
+            fallback_loaded = False
+            try:
+                if str(xml_path).lower().endswith('.xml'):
+                    mjb_path = str(xml_path)[:-4] + '.mjb'
+                    if Path(mjb_path).exists():
+                        try:
+                            self.model = mujoco.MjModel.from_xml_path(mjb_path)
+                            fallback_loaded = True
+                            print(f"Loaded compiled model fallback: {mjb_path}")
+                        except Exception:
+                            fallback_loaded = False
+            except Exception:
+                fallback_loaded = False
+
+            if not fallback_loaded:
+                raise RuntimeError(
+                    f"Failed to load MuJoCo model from '{xml_path}': {e}.\n"
+                    "Please check MUJOCO installation, file validity, or try providing a compiled .mjb model."
+                ) from e
+
         self.data = mujoco.MjData(self.model)
 
         self._default_mass = self.model.body_mass.copy()
