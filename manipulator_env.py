@@ -48,6 +48,7 @@ class DomainRandomizedEnv(gym.Env):
         ]
         # their qpos addresses (free joint qpos are 7 long: 3 pos + 4 quat)
         self.target_qpos_addrs = [int(self.model.jnt_qposadr[jid]) for jid in self.target_joint_ids]
+        self.target_body_ids = [int(self.model.jnt_bodyid[jid]) for jid in self.target_joint_ids]
 
         # obstacle body id
         self.obstacle_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "obstacle")
@@ -103,6 +104,7 @@ class DomainRandomizedEnv(gym.Env):
         return obs, reward, terminated, truncated, {}
 
     def _randomize_dynamics(self):
+        
         mass_scale = np.random.uniform(0.85, 1.15, size=self._default_mass.shape)
         self.model.body_mass[:] = self._default_mass * mass_scale
 
@@ -121,9 +123,9 @@ class DomainRandomizedEnv(gym.Env):
     def _compute_reward(self):
         base_xy = self.data.xpos[self.base_body_id][:2]
         gripper_xy = self.data.xpos[self.gripper_body_id][:2]
-        target_xy = self.data.xpos[self.target_body_id][:2]
+        target_xy = self.data.xpos[self.target_body_ids][:, :2]
 
-        distance_to_target = np.linalg.norm(gripper_xy - target_xy)
+        distance_to_target = np.min(np.linalg.norm(target_xy - gripper_xy, axis=1))
         approach_bonus = np.exp(-4.0 * distance_to_target)
         base_drift = np.linalg.norm(base_xy - self.base_start_pos[:2])
         action_penalty = 0.02 * np.sum(self.data.ctrl ** 2)
