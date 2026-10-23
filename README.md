@@ -78,7 +78,7 @@ python -m pip install -r requirements.txt pillow
 `mujoco` 3.x, `torch`, `gymnasium`, `numpy`, `scipy`, `matplotlib`가 필요합니다. 궤적 계획 트랙은 Python 3.14, MuJoCo 3.11, PyTorch 2.13(CPU)에서 확인했습니다.
 모든 스크립트는 저장소 루트에서 실행합니다.
 
-## 알려진 문제
+## 시각화 스크립트
 
-- `visualize_policy_sb3.py`: 56번째 줄의 `Path := None` 때문에 SyntaxError가 나서 실행되지 않습니다.
-- `visualize_manipulator.py`: 저장소에 없는 `run_best_model_experiments` 모듈을 import해서 실행되지 않습니다.
+- `visualize_manipulator.py`: 학습된 PPO 정책(`models/ppo_policy.pt`)을 MuJoCo 뷰어에서 실행합니다. `--condition domain_randomized`, `--model`, `--steps` 옵션이 있고, 뷰어를 열 수 없으면 텍스트 출력으로 대신합니다.
+- `visualize_policy_sb3.py`: SAC 모델(`models/sac_manipulator.zip`, `train_sb3_sac.py`로 학습)을 실행합니다. `--render`를 주면 뷰어를 띄웁니다. stable-baselines3나 모델 파일이 없으면 랜덤 행동으로 장면만 보여 줍니다.
