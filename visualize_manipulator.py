@@ -1,6 +1,7 @@
-"""Visualize the best checkpoint in a selected MuJoCo condition."""
+"""Visualize the trained PPO policy in a selected MuJoCo condition."""
 
 import argparse
+import csv
 import time
 from pathlib import Path
 
@@ -11,10 +12,39 @@ try:
     import mujoco
     import mujoco.viewer
     from manipulator_env import DomainRandomizedEnv
-    from run_best_model_experiments import choose_best_model, load_ppo
+    from train_ppo import ActorCritic
 except Exception as e:
     print(f"Missing imports: {e}")
     raise
+
+ROOT = Path(__file__).parent
+
+
+def choose_best_model(csv_path, model_path=None):
+    """Return (name, checkpoint path, PPO returns recorded in the comparison CSV)."""
+    model_path = Path(model_path) if model_path else ROOT / "models" / "ppo_policy.pt"
+    if not model_path.exists():
+        raise FileNotFoundError(f"모델을 찾을 수 없습니다: {model_path} (python train_ppo.py 로 먼저 학습하세요)")
+    known_scores = []
+    if Path(csv_path).exists():
+        with open(csv_path, newline="") as f:
+            known_scores = [float(r["return"]) for r in csv.DictReader(f) if r["algorithm"] == "ppo"]
+    return "ppo", model_path, known_scores
+
+
+def load_ppo(model_path, env, device):
+    """Build ActorCritic with the checkpoint's input size and load its weights."""
+    checkpoint = torch.load(model_path, map_location=device, weights_only=True)
+    policy_obs_dim = checkpoint["net.0.weight"].shape[1]
+    if policy_obs_dim > env.observation_space.shape[0]:
+        raise ValueError(
+            f"모델 입력 차원({policy_obs_dim})이 환경 관측 차원보다 큽니다 "
+            f"({env.observation_space.shape[0]})"
+        )
+    policy = ActorCritic(policy_obs_dim, env.action_space.shape[0]).to(device)
+    policy.load_state_dict(checkpoint)
+    policy.eval()
+    return policy, policy_obs_dim
 
 
 def main():
@@ -24,6 +54,7 @@ def main():
         choices=("nominal", "domain_randomized"),
         default="nominal",
     )
+    parser.add_argument("--model", default=None, help="PPO checkpoint (default: models/ppo_policy.pt)")
     parser.add_argument("--steps", type=int, default=500)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
@@ -33,7 +64,7 @@ def main():
     obs, _ = env.reset()
     device = torch.device(args.device)
     model_name, model_path, known_scores = choose_best_model(
-        Path(__file__).parent / "results" / "compare_results.csv"
+        ROOT / "results" / "compare_results.csv", args.model
     )
     policy, policy_obs_dim = load_ppo(model_path, env, device)
     print(f"Loaded best model: {model_name} ({model_path.name}, {device})")
