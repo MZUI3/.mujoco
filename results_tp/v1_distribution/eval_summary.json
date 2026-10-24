@@ -1,0 +1,49 @@
+{
+  "n_problems": 300,
+  "seed": 2026,
+  "model": "C:\\Users\\qesdf\\.mujoco\\models_tp\\planner.pt",
+  "obstacles": {
+    "n_obs": [
+      1,
+      1
+    ],
+    "fixed_size": true,
+    "count": {
+      "1": 300
+    }
+  },
+  "summary": {
+    "learned": {
+      "success_rate": 0.9966666666666667,
+      "reach_rate": 1.0,
+      "collision_rate": 0.0033333333333333335,
+      "final_err_mm_median": 0.1244480788143697,
+      "min_obstacle_dist_cm_median": 8.762904316459274,
+      "ee_path_len_m_mean": 1.2864419116371992,
+      "plan_jerk_median": 162.88855743408203,
+      "track_rmse_deg_mean": 0.09690413204790857,
+      "torque_sat_frac_mean": 0.0,
+      "latency_ms_median": 79.19960000072024,
+      "batch_plan_ms_per_problem": 1.6756906666705618,
+      "success_by_n_obs": {
+        "1": 0.9966666666666667
+      }
+    },
+    "linear": {
+      "success_rate": 0.7166666666666667,
+      "reach_rate": 0.87,
+      "collision_rate": 0.2833333333333333,
+      "final_err_mm_median": 0.11968044980740015,
+      "min_obstacle_dist_cm_median": 5.577038602036561,
+      "ee_path_len_m_mean": 1.1913029961463042,
+      "plan_jerk_median": 2487.17236328125,
+      "track_rmse_deg_mean": 3.5118252276047497,
+      "torque_sat_frac_mean": 0.04997333333333333,
+      "latency_ms_median": 71.2041999995563,
+      "batch_plan_ms_per_problem": 1.6663249999995364,
+      "success_by_n_obs": {
+        "1": 0.7166666666666667
+      }
+    }
+  }
+}

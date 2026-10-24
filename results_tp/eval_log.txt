@@ -1,21 +1,29 @@
+test problems: 300, poles per problem: 1: 119, 2: 102, 3: 79
 [learned] planning 300 problems ...
 [learned] MuJoCo rollouts ...
-[learned] done (42.1s)
+[learned] done (36.9s)
 [learned+refine] planning 300 problems ...
 [learned+refine] MuJoCo rollouts ...
-[learned+refine] done (47.9s)
+[learned+refine] done (35.6s)
 [trajopt] planning 300 problems ...
 [trajopt] MuJoCo rollouts ...
-[trajopt] done (32.7s)
+[trajopt] done (34.0s)
 [linear] planning 300 problems ...
 [linear] MuJoCo rollouts ...
-[linear] done (48.9s)
+[linear] done (35.7s)
 
 | method | success | reach<2cm | collision | median err (mm) | median clearance (cm) | EE path (m) | median jerk | track RMSE (deg) | latency (ms) |
 |---|---|---|---|---|---|---|---|---|---|
-| learned | 100.0% | 100.0% | 0.0% | 0.13 | 7.81 | 1.269 | 122.7 | 0.09 | 66.7 |
-| learned+refine | 100.0% | 100.0% | 0.0% | 0.88 | 5.03 | 1.248 | 93.9 | 0.09 | 469.8 |
-| trajopt | 100.0% | 100.0% | 0.0% | 0.81 | 5.41 | 1.241 | 97.4 | 0.08 | 5685.2 |
-| linear | 70.3% | 89.0% | 29.7% | 0.12 | 4.66 | 1.184 | 2093.2 | 3.54 | 82.8 |
+| learned | 99.7% | 100.0% | 0.3% | 0.13 | 8.48 | 1.324 | 164.4 | 0.10 | 101.3 |
+| learned+refine | 100.0% | 100.0% | 0.0% | 0.85 | 4.95 | 1.308 | 115.4 | 0.09 | 475.4 |
+| trajopt | 100.0% | 100.0% | 0.0% | 0.81 | 5.08 | 1.303 | 114.3 | 0.08 | 7253.1 |
+| linear | 70.0% | 86.3% | 30.0% | 0.12 | 4.69 | 1.209 | 2576.9 | 4.91 | 74.3 |
+
+| method | 1 pole (n=119) | 2 poles (n=102) | 3 poles (n=79) |
+|---|---|---|---|
+| learned | 100.0% | 99.0% | 100.0% |
+| learned+refine | 100.0% | 100.0% | 100.0% |
+| trajopt | 100.0% | 100.0% | 100.0% |
+| linear | 78.2% | 67.6% | 60.8% |
 
 saved results to C:\Users\qesdf\.mujoco\results_tp

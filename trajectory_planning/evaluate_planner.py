@@ -8,10 +8,11 @@
     linear          : IK 후 관절공간 직선 보간 (장애물 무시) - 하한 기준선
 
 Usage:
-    python trajectory_planning/evaluate_planner.py --n 100
+    python trajectory_planning/evaluate_planner.py --n 100                      # 1~3 poles, random size
+    python trajectory_planning/evaluate_planner.py --obstacles 1 1 --fixed-size  # v1 distribution
 Outputs (results_tp/):
     eval_results.csv, eval_summary.json, eval_summary.md,
-    summary_rates.png, distributions.png, example_paths_3d.png, tracking_example.png
+    summary_rates.png, success_by_obstacles.png, distributions.png, example_paths_3d.png, tracking_example.png
 """
 import argparse
 import csv
@@ -25,7 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from tp_core import (ROOT, OBST_HALF_HEIGHT, OBST_RADIUS, ProblemSampler, TrajectoryCost, load_planner,
+from tp_core import (MAX_OBS, ROOT, ProblemSampler, TrajectoryCost, load_planner, obstacle_mask,
                      plan_learned, plan_learned_refine, plan_linear, plan_trajopt)
 from tp_sim import METHOD_COLORS, SimScene
 
@@ -89,6 +90,32 @@ def plot_rates(summary, methods, path):
     plt.close(fig)
 
 
+def plot_success_by_obstacles(rows, methods, path):
+    counts = sorted({r["n_obs"] for r in rows})
+    fig, ax = plt.subplots(figsize=(1.6 + 1.6 * len(counts), 4))
+    w = 0.8 / len(methods)
+    for i, m in enumerate(methods):
+        vals, ns = [], []
+        for k in counts:
+            sel = [r["success"] for r in rows if r["method"] == m and r["n_obs"] == k]
+            vals.append(100 * np.mean(sel) if sel else np.nan)
+            ns.append(len(sel))
+        x = np.arange(len(counts)) + (i - (len(methods) - 1) / 2) * w
+        bars = ax.bar(x, vals, width=w * 0.95, color=METHOD_COLORS[m], label=m, edgecolor="white", linewidth=1)
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v + 1.5, f"{v:.0f}", ha="center", fontsize=8, color="#222")
+    ax.set_xticks(range(len(counts)), [f"{k} pole{'s' if k > 1 else ''}\n(n={sum(1 for r in rows if r['n_obs'] == k and r['method'] == methods[0])})"
+                                        for k in counts])
+    ax.set_ylim(0, 112)
+    ax.set_ylabel("success rate (%)")
+    ax.set_title("Success rate by number of obstacles (MuJoCo rollout)")
+    ax.legend(frameon=False, ncol=len(methods), fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.16))
+    _style(ax)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
 def plot_distributions(rows, latency, methods, path):
     panels = [
         ("final_err_mm", "Final EE error (mm)", True),
@@ -139,7 +166,9 @@ def plot_examples_3d(examples, methods, path):
     fig = plt.figure(figsize=(5 * n, 5))
     for i, ex in enumerate(examples):
         ax = fig.add_subplot(1, n, i + 1, projection="3d")
-        _draw_cylinder(ax, ex["obs"], OBST_RADIUS, 2 * OBST_HALF_HEIGHT)
+        for x, y, r, h in ex["obs"]:
+            if h > 0:
+                _draw_cylinder(ax, (x, y), r, h)
         _draw_cylinder(ax, (0, 0), 0.12, 0.17, color="#888780")
         for m in methods:
             ee = ex["logs"][m]["ee"]
@@ -154,7 +183,8 @@ def plot_examples_3d(examples, methods, path):
         ax.set_zlim(0, 0.7)
         ax.set_box_aspect((1.2, 1.2, 0.7))
         ax.view_init(elev=28, azim=-60)
-        ax.set_title(f"problem #{ex['idx']}")
+        n_act = int((ex["obs"][:, 3] > 0).sum())
+        ax.set_title(f"problem #{ex['idx']} ({n_act} pole{'s' if n_act > 1 else ''})")
         ax.legend(fontsize=7, loc="upper left", frameon=False)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(path, dpi=130)
@@ -186,6 +216,9 @@ def main():
     p.add_argument("--seed", type=int, default=2026)
     p.add_argument("--methods", nargs="+", default=METHODS, choices=METHODS)
     p.add_argument("--latency-n", type=int, default=10)
+    p.add_argument("--obstacles", type=int, nargs=2, default=[1, MAX_OBS], metavar=("LO", "HI"),
+                   help="number of poles per test problem is uniform in [LO, HI]")
+    p.add_argument("--fixed-size", action="store_true", help="v1 poles (4 cm x 30 cm) instead of random sizes")
     p.add_argument("--out", type=str, default=str(ROOT / "results_tp"))
     args = p.parse_args()
 
@@ -196,7 +229,11 @@ def main():
     sim = SimScene()
     net, cfg = load_planner(args.model, sim.kin)
     cost = TrajectoryCost(sim.kin, cfg)
-    q0, goal, obs = ProblemSampler(sim.kin, cost, seed=args.seed).sample(args.n)
+    sampler = ProblemSampler(sim.kin, cost, seed=args.seed, n_obs=tuple(args.obstacles), fixed_size=args.fixed_size)
+    q0, goal, obs = sampler.sample(args.n)
+    n_obs = obstacle_mask(obs).sum(1).tolist()
+    print(f"test problems: {args.n}, poles per problem: " +
+          ", ".join(f"{k}: {n_obs.count(k)}" for k in sorted(set(n_obs))), flush=True)
     planners = make_planners(net, cost)
     methods = args.methods
 
@@ -211,7 +248,7 @@ def main():
         t0 = time.time()
         for i in range(args.n):
             met, log = sim.rollout(ctrl[i].numpy(), cost.basis, q0[i].numpy(), goal[i].numpy(), obs[i].numpy())
-            row = dict(problem=i, method=m, **met, **{k: float(v[i]) for k, v in pm.items()},
+            row = dict(problem=i, method=m, n_obs=n_obs[i], **met, **{k: float(v[i]) for k, v in pm.items()},
                        batch_plan_ms_per_problem=batch_time / args.n * 1000)
             rows.append(row)
             logs[m].append(log)
@@ -236,13 +273,18 @@ def main():
             batch_plan_ms_per_problem=r[0]["batch_plan_ms_per_problem"],
         )
         summary[m] = {k: float(v) for k, v in summary[m].items()}
+        summary[m]["success_by_n_obs"] = {int(k): float(np.mean([x["success"] for x in r if x["n_obs"] == k]))
+                                          for k in sorted(set(n_obs))}
 
     with open(out / "eval_results.csv", "w", newline="") as fcsv:
         w = csv.DictWriter(fcsv, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
     with open(out / "eval_summary.json", "w") as fj:
-        json.dump(dict(n_problems=args.n, seed=args.seed, model=args.model, summary=summary), fj, indent=2)
+        json.dump(dict(n_problems=args.n, seed=args.seed, model=args.model,
+                       obstacles=dict(n_obs=args.obstacles, fixed_size=args.fixed_size,
+                                      count={int(k): n_obs.count(k) for k in sorted(set(n_obs))}),
+                       summary=summary), fj, indent=2)
 
     header = ("| method | success | reach<2cm | collision | median err (mm) | median clearance (cm) "
               "| EE path (m) | median jerk | track RMSE (deg) | latency (ms) |")
@@ -254,17 +296,28 @@ def main():
                      f"{s['min_obstacle_dist_cm_median']:.2f} | {s['ee_path_len_m_mean']:.3f} | "
                      f"{s['plan_jerk_median']:.1f} | {s['track_rmse_deg_mean']:.2f} | {s['latency_ms_median']:.1f} |")
     table = "\n".join(lines)
-    (out / "eval_summary.md").write_text(f"# Trajectory planner evaluation ({args.n} problems, seed {args.seed})\n\n"
-                                         + table + "\n", encoding="utf-8")
-    print("\n" + table + "\n")
+    counts = sorted(set(n_obs))
+    lines2 = ["| method | " + " | ".join(f"{k} pole{'s' if k > 1 else ''} (n={n_obs.count(k)})" for k in counts) + " |",
+              "|" + "---|" * (len(counts) + 1)]
+    for m in methods:
+        lines2.append(f"| {m} | " + " | ".join(f"{summary[m]['success_by_n_obs'][k]*100:.1f}%" for k in counts) + " |")
+    table2 = "\n".join(lines2)
+    dist = (f"poles per problem uniform in [{args.obstacles[0]}, {args.obstacles[1]}], "
+            f"{'fixed 4 cm x 30 cm' if args.fixed_size else 'radius 3-7 cm, height 15-40 cm'}")
+    (out / "eval_summary.md").write_text(
+        f"# Trajectory planner evaluation ({args.n} problems, seed {args.seed})\n\n{dist}\n\n"
+        + table + "\n\nSuccess rate by number of obstacles\n\n" + table2 + "\n", encoding="utf-8")
+    print("\n" + table + "\n\n" + table2 + "\n")
 
     # ---- plots ----
     plot_rates(summary, methods, out / "summary_rates.png")
+    plot_success_by_obstacles(rows, methods, out / "success_by_obstacles.png")
     plot_distributions(rows, latency, methods, out / "distributions.png")
 
     # examples: prefer problems where the naive straight line fails (obstacle actually matters)
     by = {(r["problem"], r["method"]): r for r in rows}
     hard = [i for i in range(args.n) if "linear" in methods and not by[(i, "linear")]["success"]]
+    hard.sort(key=lambda i: -n_obs[i])  # show the busiest scenes first
     picks = (hard + [i for i in range(args.n) if i not in hard])[:4]
     examples = [dict(idx=i, goal=goal[i].numpy(), obs=obs[i].numpy(),
                      logs={m: logs[m][i] for m in methods},

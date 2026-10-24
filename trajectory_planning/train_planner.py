@@ -1,13 +1,15 @@
 """
 Learned trajectory planner 학습.
 
-(q0, goal, obstacle, goal-IK 해) -> B-spline 관절 궤적을 한 번의 forward로 출력하는 MLP를
-미분 가능한 궤적 비용(목표 오차 + 충돌 + 관절 한계 + 가속도/속도)으로 직접 학습한다.
+(q0, goal, 장애물 집합(1~3개 기둥, 크기 가변), goal-IK 해) -> B-spline 관절 궤적을 한 번의 forward로
+출력하는 네트워크(장애물 집합 인코더 + MLP)를 미분 가능한 궤적 비용(목표 오차 + 충돌 + 관절 한계 +
+가속도/속도)으로 직접 학습한다.
 전문가 데모가 필요 없다. 무작위 문제와 그 충돌 인지 IK 해를 미리 계산한 문제 풀에서 배치를 뽑는다.
 
 Usage:
     python trajectory_planning/train_planner.py                    # 기본 3000 iters (~15분, CPU)
     python trajectory_planning/train_planner.py --iters 300        # 빠른 동작 확인
+    python trajectory_planning/train_planner.py --obstacles 1 1 --fixed-size   # v1 분포(기둥 1개, 고정 크기)
 """
 import argparse
 import json
@@ -21,8 +23,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from tp_core import (ROOT, ArmKinematics, PlanConfig, PlannerNet, ProblemSampler, TrajectoryCost,
-                     assemble_ctrl, build_model, goal_ik, save_planner)
+from tp_core import (MAX_OBS, ROOT, ArmKinematics, PlanConfig, PlannerNet, ProblemSampler, TrajectoryCost,
+                     assemble_ctrl, build_model, goal_ik, obstacle_mask, save_planner)
 
 
 @torch.no_grad()
@@ -42,9 +44,11 @@ def validate(net, cost, val):
     c, info = cost(assemble_ctrl(q0, q_end, inner, cost.basis), goal, obs)
     reach = info["goal_err"] < 0.02
     free = info["min_clearance"] > 0
+    n_obs = obstacle_mask(obs).sum(1)
+    by_n = {int(k): float((reach & free)[n_obs == k].float().mean()) for k in n_obs.unique()}
     return dict(cost=float(c.mean()), goal_err_mm=float(info["goal_err"].mean() * 1000),
                 reach=float(reach.float().mean()), collision_free=float(free.float().mean()),
-                success=float((reach & free).float().mean()))
+                success=float((reach & free).float().mean()), success_by_n_obs=by_n)
 
 
 def _smooth(x, k=10):
@@ -73,6 +77,10 @@ def plot_history(hist, path):
     for key, color, label in [("success", "#2a78d6", "success"), ("reach", "#1baf7a", "reach < 2 cm"),
                               ("collision_free", "#eb6834", "collision-free")]:
         ax.plot(vit, [h[key] * 100 for h in hist["val"]], color=color, lw=2, label=label)
+    counts = sorted({k for h in hist["val"] for k in h.get("success_by_n_obs", {})}, key=int)
+    for k, ls in zip(counts, [":", "--", "-."]):
+        ax.plot(vit, [h["success_by_n_obs"].get(str(k), h["success_by_n_obs"].get(k, float("nan"))) * 100
+                      for h in hist["val"]], color="#52514e", lw=1.2, ls=ls, label=f"success, {k} pole(s)")
     ax.set_ylim(0, 100)
     ax.set_ylabel("%")
     ax.set_title("Validation rates (kinematic model)")
@@ -105,6 +113,9 @@ def main():
     p.add_argument("--depth", type=int, default=4)
     p.add_argument("--ik-steps", type=int, default=5, help="differentiable DLS-IK steps on q_end (0 = pure MLP)")
     p.add_argument("--pool", type=int, default=100_000, help="number of pre-sampled training problems")
+    p.add_argument("--obstacles", type=int, nargs=2, default=[1, MAX_OBS], metavar=("LO", "HI"),
+                   help="number of poles per problem is uniform in [LO, HI]")
+    p.add_argument("--fixed-size", action="store_true", help="v1 poles (4 cm x 30 cm) instead of random sizes")
     p.add_argument("--curriculum", type=float, default=0.0,
                    help="fraction of training over which the collision weight ramps from 10%% to 100%%")
     p.add_argument("--val-every", type=int, default=100)
@@ -121,9 +132,12 @@ def main():
     cfg = PlanConfig()
     cost = TrajectoryCost(kin, cfg)
     t0 = time.time()
-    pool = build_pool(ProblemSampler(kin, cost, seed=args.seed), cost, args.pool)
-    val = build_pool(ProblemSampler(kin, cost, seed=10_000 + args.seed), cost, 1024)
-    print(f"problem pool: {len(pool[0])} train / {len(val[0])} val ({time.time() - t0:.0f}s)", flush=True)
+    sampler_cfg = dict(n_obs=tuple(args.obstacles), fixed_size=args.fixed_size)
+    pool = build_pool(ProblemSampler(kin, cost, seed=args.seed, **sampler_cfg), cost, args.pool)
+    val = build_pool(ProblemSampler(kin, cost, seed=10_000 + args.seed, **sampler_cfg), cost, 1024)
+    print(f"problem pool: {len(pool[0])} train / {len(val[0])} val ({time.time() - t0:.0f}s) | "
+          f"poles per problem {args.obstacles[0]}..{args.obstacles[1]}, "
+          f"{'fixed' if args.fixed_size else 'random'} size", flush=True)
     gen = torch.Generator().manual_seed(args.seed)
 
     net = PlannerNet(cfg.n_ctrl, hidden=args.hidden, depth=args.depth, q_lo=kin.q_lo, q_hi=kin.q_hi,
@@ -165,18 +179,22 @@ def main():
             v["iter"] = it
             hist["val"].append(v)
             elapsed = time.time() - t_start
-            print(f"[{it:5d}/{args.iters}] loss={loss.item():.3f} | val success={v['success']*100:5.1f}% "
+            by_n = " ".join(f"{k}p:{r*100:.0f}%" for k, r in sorted(v["success_by_n_obs"].items()))
+            print(f"[{it:5d}/{args.iters}] loss={loss.item():.3f} | val success={v['success']*100:5.1f}% ({by_n}) "
                   f"reach={v['reach']*100:5.1f}% free={v['collision_free']*100:5.1f}% "
                   f"err={v['goal_err_mm']:.1f}mm cost={v['cost']:.3f} | {elapsed/60:.1f} min", flush=True)
             key = (v["success"], -v["cost"])
             if ramp >= 1.0 and key > (best[0], -best[1]):
                 best = (v["success"], v["cost"])
-                save_planner(save_dir / "planner.pt", net, cfg, args.hidden, args.depth, extra=dict(val=v))
+                save_planner(save_dir / "planner.pt", net, cfg, args.hidden, args.depth,
+                             extra=dict(val=v, sampler=sampler_cfg))
 
     cost.cfg.w_collision, cost.cfg.w_terminal_collision = w_col, w_term
     if best[0] < 0:  # curriculum never finished (very short run): save the final net
-        save_planner(save_dir / "planner.pt", net, cfg, args.hidden, args.depth, extra=dict(val=hist["val"][-1]))
-    save_planner(save_dir / "planner_last.pt", net, cfg, args.hidden, args.depth, extra=dict(val=hist["val"][-1]))
+        save_planner(save_dir / "planner.pt", net, cfg, args.hidden, args.depth,
+                     extra=dict(val=hist["val"][-1], sampler=sampler_cfg))
+    save_planner(save_dir / "planner_last.pt", net, cfg, args.hidden, args.depth,
+                 extra=dict(val=hist["val"][-1], sampler=sampler_cfg))
     with open(save_dir / "train_history.json", "w") as f:
         json.dump(hist, f, indent=1)
     plot_history(hist, save_dir / "training_curves.png")

@@ -2,8 +2,9 @@
 Trajectory planning core: MuJoCo scene, differentiable kinematics, cost, planners.
 
 문제 정의
-    시작 관절각 q0, 목표 엔드이펙터 위치 goal(xyz), 원기둥 장애물 위치 obstacle(xy)가 주어지면
-    T초 동안 장애물/바닥/베이스와 충돌하지 않고 goal에 도달하는 부드러운 관절 궤적 q(t)를 만든다.
+    시작 관절각 q0, 목표 엔드이펙터 위치 goal(xyz), 원기둥 장애물 집합 obstacles(최대 MAX_OBS개,
+    각각 x, y, 반지름, 높이)가 주어지면 T초 동안 장애물/바닥/베이스와 충돌하지 않고 goal에 도달하는
+    부드러운 관절 궤적 q(t)를 만든다. 장애물 텐서는 (B, MAX_OBS, 4)이고 높이가 0인 슬롯은 비어 있다.
 
 궤적 표현
     clamped cubic B-spline (K개 제어점). c0=c1=q0, c_{K-2}=c_{K-1}=q_end 로 고정하여
@@ -33,8 +34,12 @@ EE_BODY = "gripper_base"
 # bodies that never move relative to the base (excluded from collision spheres)
 STATIC_ROBOT_BODIES = {"base", "link1"}
 
-OBST_RADIUS = 0.04
-OBST_HALF_HEIGHT = 0.15
+MAX_OBS = 3                        # obstacle slots in the scene / network input
+OBST_RADIUS_RANGE = (0.03, 0.07)   # random obstacle size (v2); v1 used a fixed 4 cm x 30 cm pole
+OBST_HEIGHT_RANGE = (0.15, 0.40)
+OBST_RADIUS = 0.04                 # fixed size used by --fixed-size (the v1 distribution)
+OBST_HEIGHT = 0.30
+OBST_COLORS = ([0.85, 0.35, 0.25, 1.0], [0.80, 0.25, 0.45, 1.0], [0.90, 0.50, 0.20, 1.0])
 BASE_CYL = dict(xy=(0.0, 0.0), radius=0.12, z_lo=0.04, z_hi=0.17)
 
 
@@ -57,18 +62,23 @@ class PlanConfig:
 # MuJoCo scene
 # --------------------------------------------------------------------------- #
 def build_model() -> mujoco.MjModel:
-    """Robot from the existing XML, free objects removed, tall pole obstacle + goal marker."""
+    """Robot from the existing XML, free objects removed, MAX_OBS pole obstacles + goal marker."""
     spec = mujoco.MjSpec.from_file(str(ROBOT_XML))
     for name in ("target_object1", "target_object2"):
         body = spec.body(name)
         if body is not None:
             spec.delete(body)
 
-    obstacle = spec.body("obstacle")
-    obstacle.pos = [0.35, 0.0, OBST_HALF_HEIGHT]
-    geom = obstacle.geoms[0]
-    geom.size = [OBST_RADIUS, OBST_HALF_HEIGHT, 0.0]
-    geom.rgba = [0.85, 0.35, 0.25, 1.0]
+    # replace the single XML pole by MAX_OBS pole bodies. They are compiled at the maximum size so the
+    # compile-time bounding volumes stay conservative when SimScene shrinks/moves them per problem.
+    old = spec.body("obstacle")
+    if old is not None:
+        spec.delete(old)
+    r_max, h_max = OBST_RADIUS_RANGE[1], OBST_HEIGHT_RANGE[1]
+    for j in range(MAX_OBS):
+        body = spec.worldbody.add_body(name=f"obstacle_{j}", pos=[0.35 + 0.1 * j, 0.0, h_max / 2])
+        body.add_geom(name=f"obstacle_{j}_geom", type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+                      size=[r_max, h_max / 2, 0.0], rgba=OBST_COLORS[j % len(OBST_COLORS)])
 
     goal = spec.worldbody.add_body(name="goal", mocap=True)
     goal.add_geom(type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[0.02, 0, 0],
@@ -295,14 +305,30 @@ def assemble_ctrl(q0: torch.Tensor, q_end: torch.Tensor, inner_delta: torch.Tens
 # --------------------------------------------------------------------------- #
 # Cost
 # --------------------------------------------------------------------------- #
-def capped_cylinder_sdf(p: torch.Tensor, xy: torch.Tensor, radius: float, z_lo: float, z_hi: float):
-    """Signed distance from points p (...,3) to a vertical cylinder; xy broadcastable to (...,2)."""
+def capped_cylinder_sdf(p: torch.Tensor, xy: torch.Tensor, radius, z_lo, z_hi):
+    """Signed distance from points p (...,3) to a vertical cylinder; xy broadcastable to (...,2),
+    radius / z_lo / z_hi floats or tensors broadcastable to (...)."""
     d_r = torch.linalg.norm(p[..., :2] - xy, dim=-1) - radius
     zc, hh = 0.5 * (z_lo + z_hi), 0.5 * (z_hi - z_lo)
     d_z = torch.abs(p[..., 2] - zc) - hh
     outside = torch.sqrt(torch.clamp(d_r, min=0) ** 2 + torch.clamp(d_z, min=0) ** 2 + 1e-12)
     inside = torch.clamp(torch.maximum(d_r, d_z), max=0)
     return outside + inside
+
+
+def obstacle_mask(obs: torch.Tensor) -> torch.Tensor:
+    """obs (..., M, 4) = (x, y, radius, height) -> active slots (..., M)."""
+    return obs[..., 3] > 0
+
+
+def obstacles_sdf(p: torch.Tensor, obs: torch.Tensor) -> torch.Tensor:
+    """Min signed distance from points p (B, ..., 3) to the active poles of obs (B, M, 4) -> (B, ...)."""
+    n_extra = p.dim() - 2                       # (B, ..., 3) -> broadcast obstacles over the middle dims
+    shape = (obs.shape[0],) + (1,) * n_extra + (obs.shape[1],)
+    xy = obs[..., :2].reshape(obs.shape[0], *([1] * n_extra), obs.shape[1], 2)
+    d = capped_cylinder_sdf(p[..., None, :], xy, obs[..., 2].reshape(shape), 0.0, obs[..., 3].reshape(shape))
+    d = torch.where(obstacle_mask(obs).reshape(shape), d, torch.full_like(d, 1e3))
+    return d.amin(dim=-1)
 
 
 class TrajectoryCost:
@@ -315,15 +341,15 @@ class TrajectoryCost:
         self.B2 = torch.tensor(self.basis.matrix(ts, 2), dtype=torch.float32)
         self.base_xy = torch.tensor(BASE_CYL["xy"], dtype=torch.float32)
 
-    def clearance(self, q: torch.Tensor, obs_xy: torch.Tensor):
-        """q (B,T,D), obs_xy (B,2) -> signed clearance of every sphere (B,T,S) (min over obstacles)."""
+    def clearance(self, q: torch.Tensor, obs: torch.Tensor):
+        """q (B,T,D), obs (B,M,4) -> signed clearance of every sphere (B,T,S) (min over obstacles/base/ground)."""
         centers, rad = self.kin.spheres(q)
-        d_obs = capped_cylinder_sdf(centers, obs_xy[:, None, None, :], OBST_RADIUS, 0.0, 2 * OBST_HALF_HEIGHT)
+        d_obs = obstacles_sdf(centers, obs)
         d_base = capped_cylinder_sdf(centers, self.base_xy, BASE_CYL["radius"], BASE_CYL["z_lo"], BASE_CYL["z_hi"])
         d_ground = centers[..., 2]
         return torch.minimum(torch.minimum(d_obs, d_base), d_ground) - rad
 
-    def __call__(self, ctrl: torch.Tensor, goal: torch.Tensor, obs_xy: torch.Tensor):
+    def __call__(self, ctrl: torch.Tensor, goal: torch.Tensor, obs: torch.Tensor):
         cfg = self.cfg
         q = self.B0 @ ctrl                         # (B,T,D)
         qd = self.B1 @ ctrl
@@ -333,7 +359,7 @@ class TrajectoryCost:
         goal_err = torch.linalg.norm(ee_T - goal, dim=-1)
         c_goal = cfg.w_goal_lin * goal_err + cfg.w_goal_sq * goal_err ** 2
 
-        clr = self.clearance(q, obs_xy)
+        clr = self.clearance(q, obs)
         pen = torch.clamp(cfg.safety_margin - clr, min=0)
         c_col = cfg.w_collision * (pen ** 2).sum(-1).mean(-1) + cfg.w_terminal_collision * (pen[:, -1] ** 2).sum(-1)
 
@@ -352,26 +378,37 @@ class TrajectoryCost:
 # Problem sampling
 # --------------------------------------------------------------------------- #
 class ProblemSampler:
-    """Random (q0, goal, obstacle) triples where the start and a goal configuration are collision-free."""
+    """Random (q0, goal, obstacles) problems where the start and a goal configuration are collision-free.
 
-    def __init__(self, kin: ArmKinematics, cost: TrajectoryCost, seed: int | None = None):
+    obstacles: (n, MAX_OBS, 4) = (x, y, radius, height); empty slots have height 0.
+    n_obs=(lo, hi) draws the number of poles uniformly; fixed_size=True uses the v1 pole (4 cm x 30 cm)."""
+
+    def __init__(self, kin: ArmKinematics, cost: TrajectoryCost, seed: int | None = None,
+                 n_obs=(1, MAX_OBS), fixed_size: bool = False):
         self.kin, self.cost = kin, cost
         self.rng = np.random.default_rng(seed)
         lo = np.deg2rad([-170, -80, -140, -170])
         hi = np.deg2rad([170, 80, 140, 170])
         self.q_lo, self.q_hi = lo, hi
+        self.n_obs = (int(n_obs[0]), int(n_obs[1]))
+        assert 1 <= self.n_obs[0] <= self.n_obs[1] <= MAX_OBS
+        self.fixed_size = fixed_size
 
     def _rand_q(self, n):
         return self.rng.uniform(self.q_lo, self.q_hi, size=(n, 4))
+
+    def _f32(self, x):
+        return torch.tensor(np.asarray(x), dtype=torch.float32)
 
     @torch.no_grad()
     def sample(self, n: int):
         out_q0, out_goal, out_obs = [], [], []
         got = 0
         while got < n:
-            m = 256  # fixed chunk -> sample(n) is a prefix of sample(N) for the same seed
-            q0 = torch.tensor(self._rand_q(m), dtype=torch.float32)
-            qg = torch.tensor(self._rand_q(m), dtype=torch.float32)
+            m = 256  # fixed chunk and a fixed draw order -> sample(n) is a prefix of sample(N) for the same seed
+            rng = self.rng
+            q0 = self._f32(self._rand_q(m))
+            qg = self._f32(self._rand_q(m))
             ee0 = self.kin.ee_pos(q0)
             goal = self.kin.ee_pos(qg)
 
@@ -379,20 +416,47 @@ class ProblemSampler:
             ok = (goal[:, 2] > 0.05) & (goal[:, 2] < 0.45) & (r_goal > 0.22) & (r_goal < 0.62)
             ok &= (ee0[:, 2] > 0.10) & (torch.linalg.norm(ee0 - goal, dim=-1) > 0.20)
 
-            # obstacle on the EE path of a straight joint-space motion q0 -> qg (so it actually blocks
-            # the naive path), or half the time between start EE and goal in xy; pushed away from the base
-            s = torch.tensor(self.rng.uniform(0.3, 0.7, size=(m, 1)), dtype=torch.float32)
-            on_path = self.kin.ee_pos(q0 + s * (qg - q0))[:, :2]
-            between = 0.5 * (ee0[:, :2] + goal[:, :2])
-            pick = torch.tensor(self.rng.random(m) < 0.5)[:, None]
-            mid = torch.where(pick, on_path, between)
-            mid = mid + torch.tensor(self.rng.normal(0, 0.03, size=(m, 2)), dtype=torch.float32)
-            r_mid = torch.linalg.norm(mid, dim=-1, keepdim=True).clamp(min=1e-6)
-            obs = torch.where(r_mid < 0.24, mid / r_mid * 0.24, mid)
+            n_act = rng.integers(self.n_obs[0], self.n_obs[1] + 1, size=m)
+            slots = []
+            for j in range(MAX_OBS):
+                # pole j: on the EE path of the straight joint-space motion q0 -> qg (so it actually blocks
+                # the naive path), or between start EE and goal in xy (j = 0) / anywhere in the workspace
+                # annulus (j > 0); pushed away from the base
+                s_path = self._f32(rng.uniform(0.3, 0.7, size=(m, 1)))
+                on_path = self.kin.ee_pos(q0 + s_path * (qg - q0))[:, :2]
+                if j == 0:
+                    alt = 0.5 * (ee0[:, :2] + goal[:, :2])
+                else:
+                    rho = self._f32(rng.uniform(0.24, 0.60, size=m))
+                    th = self._f32(rng.uniform(-np.pi, np.pi, size=m))
+                    alt = torch.stack([rho * torch.cos(th), rho * torch.sin(th)], dim=-1)
+                pick = torch.tensor(rng.random(m) < 0.5)[:, None]
+                xy = torch.where(pick, on_path, alt) + self._f32(rng.normal(0, 0.03, size=(m, 2)))
+                r_xy = torch.linalg.norm(xy, dim=-1, keepdim=True).clamp(min=1e-6)
+                xy = torch.where(r_xy < 0.24, xy / r_xy * 0.24, xy)
+                if self.fixed_size:
+                    rad = torch.full((m,), OBST_RADIUS)
+                    hgt = torch.full((m,), OBST_HEIGHT)
+                else:
+                    rad = self._f32(rng.uniform(*OBST_RADIUS_RANGE, size=m))
+                    hgt = self._f32(rng.uniform(*OBST_HEIGHT_RANGE, size=m))
+                active = torch.tensor(j < n_act)
+                slots.append(torch.where(active[:, None],
+                                         torch.stack([xy[:, 0], xy[:, 1], rad, hgt], dim=-1),
+                                         torch.tensor([2.0, 2.0, 0.0, 0.0]).expand(m, 4)))
+            obs = torch.stack(slots, dim=1)                       # (m, MAX_OBS, 4)
+            mask = obstacle_mask(obs)
 
-            # goal must be reachable without touching the pole
-            d_goal_obs = torch.linalg.norm(goal[:, :2] - obs, dim=-1)
-            ok &= (d_goal_obs > OBST_RADIUS + 0.09) | (goal[:, 2] > 2 * OBST_HALF_HEIGHT + 0.09)
+            # goal (and start EE) must be reachable without touching any pole: either laterally clear
+            # of it or above it; poles must not overlap each other
+            for pt in (goal, ee0):
+                d_xy = torch.linalg.norm(pt[:, None, :2] - obs[..., :2], dim=-1)
+                clear = (d_xy > obs[..., 2] + 0.09) | (pt[:, None, 2] > obs[..., 3] + 0.09)
+                ok &= (clear | ~mask).all(dim=1)
+            for a in range(MAX_OBS):
+                for b in range(a + 1, MAX_OBS):
+                    d_ab = torch.linalg.norm(obs[:, a, :2] - obs[:, b, :2], dim=-1)
+                    ok &= (d_ab > obs[:, a, 2] + obs[:, b, 2] + 0.03) | ~(mask[:, a] & mask[:, b])
             margin = self.cost.cfg.safety_margin + 0.01
             ok &= self.cost.clearance(q0[:, None], obs).amin(dim=(1, 2)) > margin
             ok &= self.cost.clearance(qg[:, None], obs).amin(dim=(1, 2)) > margin
@@ -408,34 +472,56 @@ class ProblemSampler:
 # --------------------------------------------------------------------------- #
 # Learned planner
 # --------------------------------------------------------------------------- #
-def problem_features(q0, goal, obs_xy, q_ik):
+def global_features(q0, goal, q_ik, ee0):
     ang_g = torch.atan2(goal[:, 1], goal[:, 0])
-    ang_o = torch.atan2(obs_xy[:, 1], obs_xy[:, 0])
-    rel = obs_xy - goal[:, :2]
     return torch.cat([
         q0, torch.sin(q0), torch.cos(q0),
         q_ik, torch.sin(q_ik), torch.cos(q_ik), q_ik - q0,
         goal, torch.sin(ang_g)[:, None], torch.cos(ang_g)[:, None], torch.linalg.norm(goal[:, :2], dim=-1, keepdim=True),
-        obs_xy, torch.sin(ang_o)[:, None], torch.cos(ang_o)[:, None], torch.linalg.norm(obs_xy, dim=-1, keepdim=True),
-        rel,
+        ee0,
     ], dim=-1)
 
 
-class PlannerNet(nn.Module):
-    """MLP -> (q_end, interior control-point offsets).
+def obstacle_features(obs, goal, ee0):
+    """Per-pole features (B, M, F): geometry plus its relation to the start EE and the goal."""
+    xy, rad, hgt = obs[..., :2], obs[..., 2:3], obs[..., 3:4]
+    ang = torch.atan2(xy[..., 1], xy[..., 0])[..., None]
+    rel_g = xy - goal[:, None, :2]
+    rel_0 = xy - ee0[:, None, :2]
+    return torch.cat([
+        xy, rad, hgt, torch.sin(ang), torch.cos(ang), torch.linalg.norm(xy, dim=-1, keepdim=True),
+        rel_g, torch.linalg.norm(rel_g, dim=-1, keepdim=True) - rad,
+        rel_0, torch.linalg.norm(rel_0, dim=-1, keepdim=True) - rad,
+        goal[:, None, 2:3] - hgt, ee0[:, None, 2:3] - hgt,
+    ], dim=-1)
 
-    Conditioned on a collision-aware IK solution q_ik of the goal (the discrete IK-branch choice is
-    hard for gradient descent, so it is solved analytically). The network predicts a correction of
-    q_end around q_ik and the via-point offsets that bend the path around the obstacle. q_end is then
-    passed through a few differentiable DLS-IK steps (analytic Jacobian) so the goal stays exact.
-    With the zero-initialised head the untrained network equals the straight-line baseline."""
+
+N_GLOBAL_FEATURES = 7 * 4 + 3 + 2 + 1 + 3
+N_OBSTACLE_FEATURES = 15
+
+
+class PlannerNet(nn.Module):
+    """Obstacle-set encoder + MLP -> (q_end, interior control-point offsets).
+
+    Each pole is encoded by a shared MLP; the encodings are max- and mean-pooled over the active poles
+    (permutation invariant, any number of poles up to MAX_OBS) and concatenated with the global problem
+    features. Conditioned on a collision-aware IK solution q_ik of the goal (the discrete IK-branch
+    choice is hard for gradient descent, so it is solved analytically). The network predicts a
+    correction of q_end around q_ik and the via-point offsets that bend the path around the poles.
+    q_end is then passed through a few differentiable DLS-IK steps (analytic Jacobian) so the goal stays
+    exact. With the zero-initialised head the untrained network equals the straight-line baseline."""
 
     def __init__(self, n_ctrl: int, n_joints: int = 4, hidden: int = 512, depth: int = 4,
-                 q_lo=None, q_hi=None, kin: ArmKinematics | None = None, ik_steps: int = 5):
+                 q_lo=None, q_hi=None, kin: ArmKinematics | None = None, ik_steps: int = 5,
+                 obs_hidden: int = 128):
         super().__init__()
         self.n_ctrl, self.n_joints = n_ctrl, n_joints
         self.kin, self.ik_steps = kin, ik_steps
-        in_dim = 7 * n_joints + 6 + 5 + 2
+        self.obs_hidden = obs_hidden
+        self.obs_enc = nn.Sequential(nn.Linear(N_OBSTACLE_FEATURES, obs_hidden), nn.SiLU(),
+                                     nn.Linear(obs_hidden, obs_hidden), nn.SiLU(),
+                                     nn.Linear(obs_hidden, obs_hidden))
+        in_dim = N_GLOBAL_FEATURES + 2 * obs_hidden
         layers, d = [], in_dim
         for _ in range(depth):
             layers += [nn.Linear(d, hidden), nn.LayerNorm(hidden), nn.SiLU()]
@@ -447,8 +533,18 @@ class PlannerNet(nn.Module):
         self.register_buffer("q_lo", torch.as_tensor(q_lo, dtype=torch.float32))
         self.register_buffer("q_hi", torch.as_tensor(q_hi, dtype=torch.float32))
 
-    def forward(self, q0, goal, obs_xy, q_ik):
-        h = self.trunk(problem_features(q0, goal, obs_xy, q_ik))
+    def encode_obstacles(self, obs, goal, ee0):
+        mask = obstacle_mask(obs)[..., None]                       # (B, M, 1)
+        e = self.obs_enc(obstacle_features(obs, goal, ee0))        # (B, M, H)
+        e_max = torch.where(mask, e, torch.full_like(e, -1e4)).amax(dim=1)
+        e_max = torch.where(mask.any(dim=1), e_max, torch.zeros_like(e_max))
+        e_mean = (e * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+        return torch.cat([e_max, e_mean], dim=-1)
+
+    def forward(self, q0, goal, obs, q_ik):
+        ee0 = self.kin.ee_pos(q0) if self.kin is not None else torch.zeros_like(goal)
+        h = self.trunk(torch.cat([global_features(q0, goal, q_ik, ee0),
+                                  self.encode_obstacles(obs, goal, ee0)], dim=-1))
         out = self.head(h)
         q_end = torch.clamp(q_ik + 0.5 * torch.tanh(out[:, :self.n_joints]), self.q_lo + 0.02, self.q_hi - 0.02)
         if self.kin is not None:
@@ -501,7 +597,7 @@ def solve_ik(kin: ArmKinematics, q_init, goal, iters=60, damping=0.05, n_restart
 
 def goal_ik(cost, q0, goal, obs):
     """Collision-free IK solution of the goal closest to q0 (shared by all planners)."""
-    return solve_ik(cost.kin, q0, goal, clearance_fn=lambda q: cost.clearance(q, obs.repeat(len(q) // len(obs), 1)))
+    return solve_ik(cost.kin, q0, goal, clearance_fn=lambda q: cost.clearance(q, obs.repeat(len(q) // len(obs), 1, 1)))
 
 
 def plan_linear(cost, q0, goal, obs):
@@ -561,18 +657,25 @@ def plan_learned_refine(net, cost, q0, goal, obs, iters=30):
 # --------------------------------------------------------------------------- #
 # Checkpoint helpers
 # --------------------------------------------------------------------------- #
+CHECKPOINT_VERSION = 2
+
+
 def load_planner(path, kin: ArmKinematics):
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    if ckpt.get("version", 1) != CHECKPOINT_VERSION:
+        raise ValueError(f"{path} is a v{ckpt.get('version', 1)} (single fixed-size obstacle) checkpoint; "
+                         "retrain with trajectory_planning/train_planner.py")
     cfg = PlanConfig(**ckpt["plan_config"])
     net = PlannerNet(cfg.n_ctrl, hidden=ckpt["hidden"], depth=ckpt["depth"], q_lo=kin.q_lo, q_hi=kin.q_hi,
-                     kin=kin, ik_steps=ckpt.get("ik_steps", 0))
+                     kin=kin, ik_steps=ckpt.get("ik_steps", 0), obs_hidden=ckpt.get("obs_hidden", 128))
     net.load_state_dict(ckpt["state_dict"])
     net.eval()
     return net, cfg
 
 
 def save_planner(path, net: PlannerNet, cfg: PlanConfig, hidden, depth, extra=None):
-    torch.save(dict(state_dict=net.state_dict(), plan_config=asdict(cfg), hidden=hidden, depth=depth,
+    torch.save(dict(version=CHECKPOINT_VERSION, state_dict=net.state_dict(), plan_config=asdict(cfg),
+                    hidden=hidden, depth=depth, obs_hidden=net.obs_hidden,
                     ik_steps=net.ik_steps if net.kin is not None else 0, **(extra or {})), path)
 
 
@@ -594,4 +697,14 @@ if __name__ == "__main__":
     print(f"collision spheres: {len(kin.sph_rad)}, moving geoms: {len(kin.moving_geoms)}")
     cost = TrajectoryCost(kin, PlanConfig())
     q0, goal, obs = ProblemSampler(kin, cost, seed=0).sample(8)
-    print("sampled problems:", q0.shape, goal.shape, obs.shape)
+    print("sampled problems:", q0.shape, goal.shape, obs.shape, "poles per problem:", obstacle_mask(obs).sum(1).tolist())
+    # the torch cylinder SDF (on the sphere approximation) must agree with MuJoCo's geom distance
+    import tp_sim
+    sim = tp_sim.SimScene(model)
+    worst = 0.0
+    for i in range(8):
+        sim.set_problem(q0[i].numpy(), goal[i].numpy(), obs[i].numpy())
+        d_mj = sim._obstacle_distance()
+        d_t = float(obstacles_sdf(kin.spheres(q0[i:i + 1])[0], obs[i:i + 1]).sub(kin.sph_rad).min())
+        worst = max(worst, abs(d_mj - d_t))
+    print(f"sphere clearance vs MuJoCo geom distance, max |diff|: {worst*100:.2f} cm (spheres are conservative)")
