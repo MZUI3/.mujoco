@@ -1,0 +1,12 @@
+training 10 runs, 10 in parallel
+finished HoldPose-v0/PPO/seed2 (exit 0) at 11.1 min
+finished HoldPose-v0/PPO/seed1 (exit 0) at 11.1 min
+finished Reach-v0/SAC/seed2 (exit 0) at 33.4 min
+finished ReachMoving-v0/SAC/seed2 (exit 0) at 33.4 min
+finished ReachDR-v0/SAC/seed2 (exit 0) at 33.5 min
+finished ReachDR-v0/SAC/seed1 (exit 0) at 33.5 min
+finished Reach-v0/SAC/seed1 (exit 0) at 33.5 min
+finished ReachMoving-v0/SAC/seed1 (exit 0) at 33.7 min
+finished Push-v0/SAC/seed1 (exit 0) at 33.9 min
+finished Push-v0/SAC/seed2 (exit 0) at 34.0 min
+all done in 34.0 min, failures: 0

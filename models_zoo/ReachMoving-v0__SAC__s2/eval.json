@@ -1,0 +1,8 @@
+{
+ "episodes": 20,
+ "mean_return": 437.1793850085786,
+ "std_return": 174.8993006620097,
+ "success_rate": 0.95,
+ "mean_final_dist": 0.04382997415396076,
+ "collision_rate": 0.05
+}

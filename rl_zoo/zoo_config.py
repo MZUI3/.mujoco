@@ -47,8 +47,13 @@ ALGO_KWARGS = {
 }
 
 
-def run_name(env_id: str, algo: str) -> str:
-    return f"{env_id}__{algo}"
+# core benchmark: these (env, algo) pairs are trained with CORE_SEEDS seeds and reported as mean +- std
+CORE_SEEDS = (0, 1, 2)
+CORE = [("Reach-v0", "SAC"), ("ReachDR-v0", "SAC"), ("ReachMoving-v0", "SAC"), ("Push-v0", "SAC"), ("HoldPose-v0", "PPO")]
+
+
+def run_name(env_id: str, algo: str, seed: int = 0) -> str:
+    return f"{env_id}__{algo}" + (f"__s{seed}" if seed else "")
 
 
 def needs_goal_wrapper(algo: str) -> bool:

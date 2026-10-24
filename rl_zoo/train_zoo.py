@@ -5,6 +5,7 @@ RL model zoo 학습 (stable-baselines3).
     python rl_zoo/train_zoo.py --all --parallel 6                        # zoo_config.RUNS 전체를 병렬로
     python rl_zoo/train_zoo.py --env Push-v0 --algo SAC --timesteps 300000 --seed 1
     python rl_zoo/train_zoo.py --all --select ReachSparse-v0__SAC_HER Lift-v0__SAC   # 일부만
+    python rl_zoo/train_zoo.py --all --select Reach-v0__SAC Push-v0__SAC --seeds 1 2  # 추가 seed (models_zoo/<run>__s<seed>)
 SAC_HER 는 goal-conditioned 래퍼(envs/goal_wrapper.py) + HerReplayBuffer 로 학습한다.
 
 출력: models_zoo/<env>__<algo>/model.zip, config.json, monitor.csv(에피소드 리턴), eval.json(학습 직후 20 에피소드),
@@ -102,7 +103,7 @@ def plot_curve(monitor_csv, out_png, title):
 def train_one(env_id, algo, timesteps, seed=0, threads=1):
     import torch
     torch.set_num_threads(threads)
-    out = MODELS_DIR / run_name(env_id, algo)
+    out = MODELS_DIR / run_name(env_id, algo, seed)
     out.mkdir(parents=True, exist_ok=True)
     goal_wrapper = needs_goal_wrapper(algo)
     env = make_env(env_id, seed=seed, monitor_path=out / "monitor.csv", goal_wrapper=goal_wrapper)
@@ -151,25 +152,27 @@ def main():
     p.add_argument("--parallel", type=int, default=4)
     p.add_argument("--skip-existing", action="store_true")
     p.add_argument("--select", nargs="+", default=None, help="with --all: only these runs, e.g. Lift-v0__SAC")
+    p.add_argument("--seeds", type=int, nargs="+", default=None, help="with --all: train each selected run for these seeds")
     args = p.parse_args()
 
     if args.all:
-        runs = [(e, a, t) for e, a, t in RUNS
-                if not (args.skip_existing and (MODELS_DIR / run_name(e, a) / "model.zip").exists())
+        seeds = args.seeds or [args.seed]
+        runs = [(e, a, t, s) for e, a, t in RUNS for s in seeds
+                if not (args.skip_existing and (MODELS_DIR / run_name(e, a, s) / "model.zip").exists())
                 and (args.select is None or run_name(e, a) in args.select)]
         print(f"training {len(runs)} runs, {args.parallel} in parallel", flush=True)
         t0 = time.time()
 
         def launch(run):
-            e, a, t = run
+            e, a, t, s = run
             cmd = [sys.executable, __file__, "--env", e, "--algo", a, "--timesteps", str(t),
-                   "--seed", str(args.seed), "--threads", str(args.threads)]
-            log = MODELS_DIR / run_name(e, a)
+                   "--seed", str(s), "--threads", str(args.threads)]
+            log = MODELS_DIR / run_name(e, a, s)
             log.mkdir(parents=True, exist_ok=True)
             env = dict(os.environ, OMP_NUM_THREADS="1", MKL_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1")
             with open(log / "train_log.txt", "w", encoding="utf-8") as f:
                 r = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, cwd=str(ROOT), env=env)
-            print(f"finished {e}/{a} (exit {r.returncode}) at {(time.time()-t0)/60:.1f} min", flush=True)
+            print(f"finished {e}/{a}/seed{s} (exit {r.returncode}) at {(time.time()-t0)/60:.1f} min", flush=True)
             return r.returncode
 
         with ThreadPoolExecutor(args.parallel) as ex:
