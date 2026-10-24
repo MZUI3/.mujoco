@@ -1,1 +1,1 @@
-[ReachObstacle-v0/SAC] 100000 steps in 45.5 min | success 0% return -33.3
+[ReachObstacle-v0/SAC] 300000 steps in 110.7 min | success 30% return 163.9

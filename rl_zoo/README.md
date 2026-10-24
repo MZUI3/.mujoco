@@ -37,46 +37,47 @@ env = make_env("Push-v0", render_mode="rgb_array")   # env.render() -> (400, 480
 ## 모델
 
 `rl_zoo/zoo_config.py`의 `RUNS`가 학습 매트릭스(환경 × 알고리즘 × step 수)입니다. 기본 예산은 노트북 CPU에서
-전체가 1~1.5시간에 끝나도록 잡았습니다(SAC/TD3 100k step, PPO/A2C 300k step; 9개 병렬로 실측 85분, SAC 한 개 약 45분). 더 강한 모델이 필요하면
+전체가 1~1.5시간에 끝나도록 잡았습니다(SAC/TD3 100k step, PPO/A2C 300k step; 9개 병렬로 실측 85분, SAC 한 개 약 45분). 어려운 과제 ReachSparse·ReachObstacle·Lift는 300k step이고, ReachSparse에는 SAC+HER(`SAC_HER`, goal-conditioned 래퍼 `envs/goal_wrapper.py` + `HerReplayBuffer`, future 전략 4개 목표)를 추가했습니다. 더 강한 모델이 필요하면
 `--timesteps`를 늘리면 됩니다.
 
 20 에피소드 결정적 정책 평가, `random`은 무작위 행동 기준선입니다 (`python rl_zoo/evaluate_zoo.py` 결과, `results_zoo/zoo_summary.md`).
 
 | # | env | model | steps | success | mean return ± std | final dist (m) | collision | train (min) | 파일 |
 |---|---|---|---|---|---|---|---|---|---|
-|  | `Reach-v0` | random (기준선) | - | 0% | -249.2 ± 63.2 | 0.549 | 90% | - | - |
+|  | `Reach-v0` | random (기준선) | - | 0% | -234.8 ± 64.4 | 0.594 | 90% | - | - |
 | 1 | `Reach-v0` | A2C | 300k | **0%** | -174.8 ± 34.5 | 0.400 | 0% | 8.9 | `models_zoo/Reach-v0__A2C/model.zip` |
 | 2 | `Reach-v0` | PPO | 300k | **0%** | -133.4 ± 47.9 | 0.335 | 0% | 12.4 | `models_zoo/Reach-v0__PPO/model.zip` |
 | 3 | `Reach-v0` | SAC | 100k | **55%** | 275.0 ± 250.8 | 0.077 | 0% | 45.8 | `models_zoo/Reach-v0__SAC/model.zip` |
 | 4 | `Reach-v0` | TD3 | 100k | **30%** | 174.5 ± 218.5 | 0.085 | 5% | 29.3 | `models_zoo/Reach-v0__TD3/model.zip` |
-|  | `ReachSparse-v0` | random (기준선) | - | 0% | 0.1 ± 0.5 | 0.651 | 90% | - | - |
+|  | `ReachSparse-v0` | random (기준선) | - | 0% | 0.0 ± 0.0 | 0.710 | 90% | - | - |
 | 5 | `ReachSparse-v0` | PPO | 300k | **0%** | 0.0 ± 0.0 | 0.524 | 60% | 12.5 | `models_zoo/ReachSparse-v0__PPO/model.zip` |
-| 6 | `ReachSparse-v0` | SAC | 100k | **0%** | 0.0 ± 0.0 | 0.392 | 20% | 45.9 | `models_zoo/ReachSparse-v0__SAC/model.zip` |
-|  | `ReachObstacle-v0` | random (기준선) | - | 0% | -309.1 ± 58.2 | 0.704 | 90% | - | - |
-| 7 | `ReachObstacle-v0` | PPO | 300k | **0%** | -149.2 ± 88.0 | 0.323 | 25% | 12.5 | `models_zoo/ReachObstacle-v0__PPO/model.zip` |
-| 8 | `ReachObstacle-v0` | SAC | 100k | **0%** | -33.3 ± 184.0 | 0.156 | 25% | 45.5 | `models_zoo/ReachObstacle-v0__SAC/model.zip` |
-|  | `ReachDR-v0` | random (기준선) | - | 0% | -260.1 ± 82.2 | 0.657 | 95% | - | - |
-| 9 | `ReachDR-v0` | PPO | 300k | **10%** | 4.6 ± 143.4 | 0.161 | 0% | 12.3 | `models_zoo/ReachDR-v0__PPO/model.zip` |
-| 10 | `ReachDR-v0` | SAC | 100k | **75%** | 362.8 ± 197.2 | 0.039 | 0% | 46.1 | `models_zoo/ReachDR-v0__SAC/model.zip` |
-|  | `ReachMoving-v0` | random (기준선) | - | 0% | -245.1 ± 65.0 | 0.659 | 95% | - | - |
-| 11 | `ReachMoving-v0` | SAC | 100k | **80%** | 389.4 ± 178.1 | 0.044 | 5% | 44.8 | `models_zoo/ReachMoving-v0__SAC/model.zip` |
-|  | `Push-v0` | random (기준선) | - | 0% | -197.9 ± 38.1 | 0.189 | 0% | - | - |
-| 12 | `Push-v0` | SAC | 100k | **70%** | 213.0 ± 192.7 | 0.045 | 0% | 45.2 | `models_zoo/Push-v0__SAC/model.zip` |
-|  | `Lift-v0` | random (기준선) | - | 0% | -112.9 ± 21.9 | 0.150 | 0% | - | - |
-| 13 | `Lift-v0` | SAC | 100k | **0%** | 91.0 ± 133.0 | 0.150 | 0% | 45.1 | `models_zoo/Lift-v0__SAC/model.zip` |
-|  | `TrackTrajectory-v0` | random (기준선) | - | 0% | -740.3 ± 32.0 | 2.540 | 80% | - | - |
-| 14 | `TrackTrajectory-v0` | PPO | 300k | **80%** | 83.4 ± 165.3 | 0.167 | 0% | 12.4 | `models_zoo/TrackTrajectory-v0__PPO/model.zip` |
-| 15 | `TrackTrajectory-v0` | SAC | 100k | **50%** | 53.2 ± 162.5 | 0.196 | 0% | 42.5 | `models_zoo/TrackTrajectory-v0__SAC/model.zip` |
-|  | `HoldPose-v0` | random (기준선) | - | 0% | -694.7 ± 145.8 | 2.319 | 85% | - | - |
-| 16 | `HoldPose-v0` | PPO | 300k | **90%** | 160.9 ± 38.7 | 0.037 | 0% | 11.1 | `models_zoo/HoldPose-v0__PPO/model.zip` |
-|  | `ApproachObjects-v0` | random (기준선) | - | 5% | 126.4 ± 64.8 | 0.152 | 0% | - | - |
-| 17 | `ApproachObjects-v0` | SAC | 100k | **25%** | 273.4 ± 54.3 | 0.100 | 0% | 39.4 | `models_zoo/ApproachObjects-v0__SAC/model.zip` |
-| 18 | ApproachObjects-v0 | PPO (PyTorch 자체 구현) | - | - | 157.2 ± 62.6 | - | - | - | `models/ppo_policy.pt` (results/compare_results.csv 기록 (200 step 에피소드)) |
-| 19 | ApproachObjects-v0 | Diffusion Policy (TemporalUNet+DDPM) | - | - | 37.0 ± 95.9 | - | - | - | `models/diffusion_policy.pt` (results/compare_results.csv 기록 (200 step 에피소드)) |
-| 20 | ApproachObjects-v0 | Diffusion Policy + Domain Randomization | - | - | - | - | - | - | `models_dr/diffusion_policy_dr.pt` (평가 기록 없음) |
-| 21 | TrajectoryPlanning (기둥 1~3개) | Learned Trajectory Planner (self-supervised) | - | 99.7% | - | 0.0001 | 0.3% | - | `models_tp/planner.pt` (results_tp/eval_summary.json, 300문제 MuJoCo 롤아웃) |
+| 6 | `ReachSparse-v0` | SAC | 300k | **15%** | 28.9 ± 60.7 | 0.293 | 40% | 110.3 | `models_zoo/ReachSparse-v0__SAC/model.zip` |
+| 7 | `ReachSparse-v0` | SAC_HER | 300k | **65%** | 116.8 ± 84.5 | 0.055 | 5% | 118.1 | `models_zoo/ReachSparse-v0__SAC_HER/model.zip` |
+|  | `ReachObstacle-v0` | random (기준선) | - | 0% | -308.7 ± 50.3 | 0.642 | 90% | - | - |
+| 8 | `ReachObstacle-v0` | PPO | 300k | **0%** | -149.2 ± 88.0 | 0.323 | 25% | 12.5 | `models_zoo/ReachObstacle-v0__PPO/model.zip` |
+| 9 | `ReachObstacle-v0` | SAC | 300k | **30%** | 163.9 ± 310.6 | 0.083 | 30% | 110.7 | `models_zoo/ReachObstacle-v0__SAC/model.zip` |
+|  | `ReachDR-v0` | random (기준선) | - | 0% | -223.9 ± 68.6 | 0.643 | 90% | - | - |
+| 10 | `ReachDR-v0` | PPO | 300k | **10%** | 4.6 ± 143.4 | 0.161 | 0% | 12.3 | `models_zoo/ReachDR-v0__PPO/model.zip` |
+| 11 | `ReachDR-v0` | SAC | 100k | **75%** | 362.8 ± 197.2 | 0.039 | 0% | 46.1 | `models_zoo/ReachDR-v0__SAC/model.zip` |
+|  | `ReachMoving-v0` | random (기준선) | - | 0% | -250.9 ± 66.6 | 0.662 | 90% | - | - |
+| 12 | `ReachMoving-v0` | SAC | 100k | **80%** | 389.4 ± 178.1 | 0.044 | 5% | 44.8 | `models_zoo/ReachMoving-v0__SAC/model.zip` |
+|  | `Push-v0` | random (기준선) | - | 0% | -199.3 ± 44.0 | 0.167 | 0% | - | - |
+| 13 | `Push-v0` | SAC | 100k | **70%** | 213.0 ± 192.7 | 0.045 | 0% | 45.2 | `models_zoo/Push-v0__SAC/model.zip` |
+|  | `Lift-v0` | random (기준선) | - | 0% | -81.7 ± 52.3 | 0.150 | 0% | - | - |
+| 14 | `Lift-v0` | SAC | 300k | **35%** | 461.5 ± 132.5 | 0.073 | 0% | 110.0 | `models_zoo/Lift-v0__SAC/model.zip` |
+|  | `TrackTrajectory-v0` | random (기준선) | - | 0% | -739.7 ± 39.7 | 2.822 | 90% | - | - |
+| 15 | `TrackTrajectory-v0` | PPO | 300k | **80%** | 83.4 ± 165.3 | 0.167 | 0% | 12.4 | `models_zoo/TrackTrajectory-v0__PPO/model.zip` |
+| 16 | `TrackTrajectory-v0` | SAC | 100k | **50%** | 53.2 ± 162.5 | 0.196 | 0% | 42.5 | `models_zoo/TrackTrajectory-v0__SAC/model.zip` |
+|  | `HoldPose-v0` | random (기준선) | - | 0% | -705.3 ± 162.5 | 2.480 | 90% | - | - |
+| 17 | `HoldPose-v0` | PPO | 300k | **90%** | 160.9 ± 38.7 | 0.037 | 0% | 11.1 | `models_zoo/HoldPose-v0__PPO/model.zip` |
+|  | `ApproachObjects-v0` | random (기준선) | - | 15% | 162.1 ± 72.6 | 0.131 | 0% | - | - |
+| 18 | `ApproachObjects-v0` | SAC | 100k | **25%** | 273.4 ± 54.3 | 0.100 | 0% | 39.4 | `models_zoo/ApproachObjects-v0__SAC/model.zip` |
+| 19 | ApproachObjects-v0 | PPO (PyTorch 자체 구현) | - | - | 157.2 ± 62.6 | - | - | - | `models/ppo_policy.pt` (results/compare_results.csv 기록 (200 step 에피소드)) |
+| 20 | ApproachObjects-v0 | Diffusion Policy (TemporalUNet+DDPM) | - | - | 37.0 ± 95.9 | - | - | - | `models/diffusion_policy.pt` (results/compare_results.csv 기록 (200 step 에피소드)) |
+| 21 | ApproachObjects-v0 | Diffusion Policy + Domain Randomization | - | - | - | - | - | - | `models_dr/diffusion_policy_dr.pt` (평가 기록 없음) |
+| 22 | TrajectoryPlanning (기둥 1~3개) | Learned Trajectory Planner (self-supervised) | - | 99.7% | - | 0.0001 | 0.3% | - | `models_tp/planner.pt` (results_tp/eval_summary.json, 300문제 MuJoCo 롤아웃) |
 
-총 21개 모델 (SB3 zoo 17개 + 기존 4개).
+총 22개 모델 (SB3 zoo 18개 + 기존 4개).
 
 ![success](../results_zoo/zoo_success.png)
 
@@ -91,6 +92,10 @@ env = make_env("Push-v0", render_mode="rgb_array")   # env.render() -> (400, 480
 | Reach-v0 / SAC (55%) | ReachDR-v0 / SAC (75%) | TrackTrajectory-v0 / PPO (80%) |
 |---|---|---|
 | ![reach](../results_zoo/videos/Reach-v0__SAC.gif) | ![dr](../results_zoo/videos/ReachDR-v0__SAC.gif) | ![track](../results_zoo/videos/TrackTrajectory-v0__PPO.gif) |
+
+| ReachSparse-v0 / SAC+HER (65%) | ReachObstacle-v0 / SAC 300k (30%) | Lift-v0 / SAC 300k (35%) |
+|---|---|---|
+| ![sparse](../results_zoo/videos/ReachSparse-v0__SAC_HER.gif) | ![obstacle](../results_zoo/videos/ReachObstacle-v0__SAC.gif) | ![lift](../results_zoo/videos/Lift-v0__SAC.gif) |
 
 화면 위: 과제·알고리즘·에피소드·시각·목표 거리. 마지막 0.5초: SUCCESS/FAIL, 리턴, 최종 거리.
 
@@ -144,9 +149,10 @@ print(info["success"], info["dist"])
 
 ## 한계
 
-- 학습 예산이 작아서(SAC 100k, PPO 300k step) 결과는 "동작하는 베이스라인" 수준입니다. ReachSparse(희소 보상), ReachObstacle, Lift는
-  0%이고, Reach도 SAC 55%에서 아직 상승 중입니다(`models_zoo/Reach-v0__SAC/learning_curve.png`). 더 긴 학습, HER(희소 보상),
-  커리큘럼, 장애물 과제에는 궤적 플래너(`trajectory_planning/`)와의 결합이 필요합니다.
+- 학습 예산이 작아서(SAC 100k, PPO 300k step) 결과는 "동작하는 베이스라인" 수준입니다. Reach도 SAC 55%에서 아직 상승 중입니다
+  (`models_zoo/Reach-v0__SAC/learning_curve.png`). 어려운 세 과제는 300k step으로 늘려 ReachSparse 0% → SAC 15% / SAC+HER 65%,
+  ReachObstacle 0% → 30%, Lift 0% → 35%가 됐습니다. 희소 보상에는 예산보다 HER(목표 재라벨링)이 훨씬 효과적이었습니다.
+  더 올리려면 더 긴 학습, 커리큘럼, 장애물 과제에는 궤적 플래너(`trajectory_planning/`)와의 결합이 필요합니다.
 - on-policy(PPO/A2C)는 같은 벽시계 시간에 off-policy(SAC/TD3)보다 샘플 효율이 크게 낮아 도달 과제에서 거의 학습하지 못했습니다.
   반면 TrackTrajectory·HoldPose처럼 보상이 매 step 밀도 있게 주어지는 과제는 PPO가 더 잘 풀었습니다.
 - Push/Lift에서는 바닥 접촉이 정상 동작이라 `collision`에서 제외했습니다. 다른 과제는 팔(링크2 이후)과 바닥·기둥 접촉을 충돌로 셉니다.

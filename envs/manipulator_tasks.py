@@ -527,6 +527,7 @@ class ApproachObjectsEnv(gym.Wrapper):
         env = DomainRandomizedEnv(randomize=randomize, render_mode=render_mode)
         super().__init__(env)
         self.max_steps = max_steps
+        self.dt = float(env.model.opt.timestep)
         self._renderer = None
 
     def _dist(self):

@@ -19,20 +19,27 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from envs import TASK_DESCRIPTIONS, TASKS, make_env
-from rl_zoo.zoo_config import MODELS_DIR, RESULTS_DIR
+from rl_zoo.zoo_config import MODELS_DIR, RESULTS_DIR, base_algo
 
-ALGO_COLORS = {"SAC": "#2a78d6", "TD3": "#1baf7a", "PPO": "#eb6834", "A2C": "#eda100", "random": "#9a9a9a"}
+ALGO_COLORS = {"SAC": "#2a78d6", "SAC_HER": "#7c4dff", "TD3": "#1baf7a", "PPO": "#eb6834", "A2C": "#eda100", "random": "#9a9a9a"}
 
 
 def load_model(run_dir: Path):
     import stable_baselines3 as sb3
     cfg = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
-    model = getattr(sb3, cfg["algo"]).load(run_dir / "model.zip", device="cpu")
+    env = None
+    if cfg.get("goal_wrapper"):   # HerReplayBuffer models need the (goal-conditioned) env at load time
+        from envs.goal_wrapper import GoalObsWrapper
+        env = GoalObsWrapper(make_env(cfg["env_id"]), sparse="Sparse" in cfg["env_id"])
+    model = getattr(sb3, base_algo(cfg["algo"])).load(run_dir / "model.zip", env=env, device="cpu")
     return model, cfg
 
 
-def rollouts(env_id, policy, episodes, seed):
+def rollouts(env_id, policy, episodes, seed, goal_wrapper=False):
     env = make_env(env_id)
+    if goal_wrapper:
+        from envs.goal_wrapper import GoalObsWrapper
+        env = GoalObsWrapper(env, sparse="Sparse" in env_id)
     rets, succ, dists, cols = [], [], [], []
     for ep in range(episodes):
         obs, info = env.reset(seed=seed + ep)
@@ -151,7 +158,8 @@ def main():
     for d in run_dirs:
         model, cfg = load_model(d)
         print(f"[{cfg['env_id']}] {cfg['algo']}", flush=True)
-        r = rollouts(cfg["env_id"], lambda obs, env: model.predict(obs, deterministic=True)[0], args.episodes, args.seed)
+        r = rollouts(cfg["env_id"], lambda obs, env: model.predict(obs, deterministic=True)[0], args.episodes, args.seed,
+                     goal_wrapper=cfg.get("goal_wrapper", False))
         rows.append(dict(env_id=cfg["env_id"], algo=cfg["algo"], path=str(d.relative_to(ROOT) / "model.zip").replace("\\", "/"),
                          timesteps=cfg["timesteps"], train_time_s=cfg.get("train_time_s"),
                          note=f"SB3 {cfg['algo']}, {cfg['timesteps']//1000}k steps", **r))

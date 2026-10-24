@@ -1,0 +1,27 @@
+{
+ "env_id": "ReachSparse-v0",
+ "algo": "SAC_HER",
+ "timesteps": 300000,
+ "seed": 0,
+ "train_time_s": 7087.253684520721,
+ "goal_wrapper": true,
+ "obs_dim": 17,
+ "act_dim": 4,
+ "algo_kwargs": {
+  "learning_rate": 0.0003,
+  "buffer_size": 300000,
+  "learning_starts": 2000,
+  "batch_size": 256,
+  "tau": 0.005,
+  "gamma": 0.98,
+  "train_freq": 1,
+  "gradient_steps": 1,
+  "policy_kwargs": {
+   "net_arch": [
+    256,
+    256
+   ],
+   "use_sde": false
+  }
+ }
+}
