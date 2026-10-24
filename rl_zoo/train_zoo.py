@@ -4,6 +4,8 @@ RL model zoo 학습 (stable-baselines3).
     python rl_zoo/train_zoo.py --env Reach-v0 --algo SAC                 # 한 개 (기본 timesteps는 zoo_config)
     python rl_zoo/train_zoo.py --all --parallel 6                        # zoo_config.RUNS 전체를 병렬로
     python rl_zoo/train_zoo.py --env Push-v0 --algo SAC --timesteps 300000 --seed 1
+    python rl_zoo/train_zoo.py --all --select ReachSparse-v0__SAC_HER Lift-v0__SAC   # 일부만
+SAC_HER 는 goal-conditioned 래퍼(envs/goal_wrapper.py) + HerReplayBuffer 로 학습한다.
 
 출력: models_zoo/<env>__<algo>/model.zip, config.json, monitor.csv(에피소드 리턴), eval.json(학습 직후 20 에피소드),
       learning_curve.png
@@ -26,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 
 import numpy as np
 
-from rl_zoo.zoo_config import ALGO_KWARGS, MODELS_DIR, RUNS, run_name
+from rl_zoo.zoo_config import ALGO_KWARGS, MODELS_DIR, RUNS, base_algo, needs_goal_wrapper, run_name
 
 
 def get_algo(name):
@@ -34,17 +36,23 @@ def get_algo(name):
     return getattr(sb3, name)
 
 
-def make_env(env_id, seed=0, monitor_path=None):
+def make_env(env_id, seed=0, monitor_path=None, goal_wrapper=False):
     from stable_baselines3.common.monitor import Monitor
     from envs import make_env as _make
     env = _make(env_id)
+    if goal_wrapper:
+        from envs.goal_wrapper import GoalObsWrapper
+        env = GoalObsWrapper(env, sparse="Sparse" in env_id)
     env.reset(seed=seed)
     return Monitor(env, filename=str(monitor_path) if monitor_path else None, info_keywords=("success", "dist"))
 
 
-def evaluate(model, env_id, episodes=20, seed=10_000):
+def evaluate(model, env_id, episodes=20, seed=10_000, goal_wrapper=False):
     from envs import make_env as _make
     env = _make(env_id)
+    if goal_wrapper:
+        from envs.goal_wrapper import GoalObsWrapper
+        env = GoalObsWrapper(env, sparse="Sparse" in env_id)
     rets, succ, dists, cols = [], [], [], []
     for ep in range(episodes):
         obs, info = env.reset(seed=seed + ep)
@@ -96,20 +104,29 @@ def train_one(env_id, algo, timesteps, seed=0, threads=1):
     torch.set_num_threads(threads)
     out = MODELS_DIR / run_name(env_id, algo)
     out.mkdir(parents=True, exist_ok=True)
-    env = make_env(env_id, seed=seed, monitor_path=out / "monitor.csv")
+    goal_wrapper = needs_goal_wrapper(algo)
+    env = make_env(env_id, seed=seed, monitor_path=out / "monitor.csv", goal_wrapper=goal_wrapper)
     kwargs = dict(ALGO_KWARGS[algo])
     if algo == "TD3":
         from stable_baselines3.common.noise import NormalActionNoise
         n = env.action_space.shape[0]
         kwargs["action_noise"] = NormalActionNoise(np.zeros(n), 0.1 * np.ones(n))
-    model = get_algo(algo)("MlpPolicy", env, seed=seed, verbose=0, device="cpu", **kwargs)
+    policy = "MlpPolicy"
+    if goal_wrapper:
+        from stable_baselines3 import HerReplayBuffer
+        kwargs["replay_buffer_class"] = HerReplayBuffer
+        kwargs["replay_buffer_kwargs"] = dict(n_sampled_goal=4, goal_selection_strategy="future")
+        policy = "MultiInputPolicy"
+    model = get_algo(base_algo(algo))(policy, env, seed=seed, verbose=0, device="cpu", **kwargs)
     t0 = time.time()
     model.learn(total_timesteps=timesteps, progress_bar=False)
     train_time = time.time() - t0
     model.save(out / "model.zip")
-    ev = evaluate(model, env_id)
+    ev = evaluate(model, env_id, goal_wrapper=goal_wrapper)
     cfg = dict(env_id=env_id, algo=algo, timesteps=timesteps, seed=seed, train_time_s=train_time,
-               obs_dim=int(env.observation_space.shape[0]), act_dim=int(env.action_space.shape[0]),
+               goal_wrapper=goal_wrapper,
+               obs_dim=int((env.observation_space["observation"] if goal_wrapper else env.observation_space).shape[0]),
+               act_dim=int(env.action_space.shape[0]),
                algo_kwargs={k: (v if not isinstance(v, dict) else v) for k, v in ALGO_KWARGS[algo].items()})
     (out / "config.json").write_text(json.dumps(cfg, indent=1, default=str), encoding="utf-8")
     (out / "eval.json").write_text(json.dumps(ev, indent=1), encoding="utf-8")
@@ -133,11 +150,13 @@ def main():
     p.add_argument("--all", action="store_true", help="train every run in zoo_config.RUNS")
     p.add_argument("--parallel", type=int, default=4)
     p.add_argument("--skip-existing", action="store_true")
+    p.add_argument("--select", nargs="+", default=None, help="with --all: only these runs, e.g. Lift-v0__SAC")
     args = p.parse_args()
 
     if args.all:
         runs = [(e, a, t) for e, a, t in RUNS
-                if not (args.skip_existing and (MODELS_DIR / run_name(e, a) / "model.zip").exists())]
+                if not (args.skip_existing and (MODELS_DIR / run_name(e, a) / "model.zip").exists())
+                and (args.select is None or run_name(e, a) in args.select)]
         print(f"training {len(runs)} runs, {args.parallel} in parallel", flush=True)
         t0 = time.time()
 

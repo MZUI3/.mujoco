@@ -1,1 +1,1 @@
-[ReachSparse-v0/SAC] 100000 steps in 45.9 min | success 0% return 0.0
+[ReachSparse-v0/SAC] 300000 steps in 110.3 min | success 15% return 28.9

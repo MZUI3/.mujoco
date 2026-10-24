@@ -21,19 +21,28 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from envs import make_env
-from rl_zoo.zoo_config import MODELS_DIR, RESULTS_DIR
+from rl_zoo.zoo_config import MODELS_DIR, RESULTS_DIR, base_algo
 
 
 def load_policy(run):
     import stable_baselines3 as sb3
     d = MODELS_DIR / run
     cfg = json.loads((d / "config.json").read_text(encoding="utf-8"))
-    model = getattr(sb3, cfg["algo"]).load(d / "model.zip", device="cpu")
-    return cfg["env_id"], cfg["algo"], lambda obs: model.predict(obs, deterministic=True)[0]
+    env = _env(cfg["env_id"], cfg.get("goal_wrapper", False), None) if cfg.get("goal_wrapper") else None
+    model = getattr(sb3, base_algo(cfg["algo"])).load(d / "model.zip", env=env, device="cpu")
+    return cfg["env_id"], cfg["algo"], lambda obs: model.predict(obs, deterministic=True)[0], cfg.get("goal_wrapper", False)
 
 
-def record(env_id, label, policy, episodes, path, seed=10_000, fps=25, every=4):
-    env = make_env(env_id, render_mode="rgb_array")
+def _env(env_id, goal_wrapper, render_mode):
+    env = make_env(env_id, render_mode=render_mode)
+    if goal_wrapper:
+        from envs.goal_wrapper import GoalObsWrapper
+        env = GoalObsWrapper(env, sparse="Sparse" in env_id)
+    return env
+
+
+def record(env_id, label, policy, episodes, path, seed=10_000, fps=25, every=4, goal_wrapper=False):
+    env = _env(env_id, goal_wrapper, "rgb_array")
     font = ImageFont.load_default(size=14)
     frames = []
     results = []
@@ -68,8 +77,8 @@ def record(env_id, label, policy, episodes, path, seed=10_000, fps=25, every=4):
     return results
 
 
-def view(env_id, policy, episodes, seed=10_000):
-    env = make_env(env_id, render_mode="human")
+def view(env_id, policy, episodes, seed=10_000, goal_wrapper=False):
+    env = _env(env_id, goal_wrapper, "human")
     for ep in range(episodes):
         obs, info = env.reset(seed=seed + ep)
         done, ret, t0 = False, 0.0, time.time()
@@ -105,8 +114,8 @@ def main():
         for d in sorted(MODELS_DIR.iterdir()):
             if not (d / "model.zip").exists():
                 continue
-            env_id, algo, pol = load_policy(d.name)
-            res = record(env_id, algo, pol, args.episodes, out / f"{d.name}.gif", seed=args.seed)
+            env_id, algo, pol, gw = load_policy(d.name)
+            res = record(env_id, algo, pol, args.episodes, out / f"{d.name}.gif", seed=args.seed, goal_wrapper=gw)
             print(f"saved {out / (d.name + '.gif')}  " + " ".join("ok" if r["success"] else "fail" for r in res))
         return
     if args.random:
@@ -114,14 +123,14 @@ def main():
         rng = np.random.default_rng(0)
         space = make_env(env_id).action_space
         pol = lambda obs: rng.uniform(-1, 1, size=space.shape).astype(np.float32)
-        name = f"{env_id}__random"
+        name, gw = f"{env_id}__random", False
     else:
-        env_id, label, pol = load_policy(args.run)
+        env_id, label, pol, gw = load_policy(args.run)
         name = args.run
     if args.viewer:
-        view(env_id, pol, args.episodes, seed=args.seed)
+        view(env_id, pol, args.episodes, seed=args.seed, goal_wrapper=gw)
     else:
-        res = record(env_id, label, pol, args.episodes, out / f"{name}.gif", seed=args.seed)
+        res = record(env_id, label, pol, args.episodes, out / f"{name}.gif", seed=args.seed, goal_wrapper=gw)
         print(f"saved {out / (name + '.gif')}  " + " ".join("ok" if r["success"] else "fail" for r in res))
 
 

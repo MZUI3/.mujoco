@@ -1,9 +1,10 @@
 {
  "env_id": "Lift-v0",
  "algo": "SAC",
- "timesteps": 100000,
+ "timesteps": 300000,
  "seed": 0,
- "train_time_s": 2707.916756629944,
+ "train_time_s": 6597.554526805878,
+ "goal_wrapper": false,
  "obs_dim": 23,
  "act_dim": 5,
  "algo_kwargs": {

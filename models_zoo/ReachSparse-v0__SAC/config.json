@@ -1,9 +1,10 @@
 {
  "env_id": "ReachSparse-v0",
  "algo": "SAC",
- "timesteps": 100000,
+ "timesteps": 300000,
  "seed": 0,
- "train_time_s": 2754.8653812408447,
+ "train_time_s": 6619.7032816410065,
+ "goal_wrapper": false,
  "obs_dim": 17,
  "act_dim": 4,
  "algo_kwargs": {

@@ -1,0 +1,6 @@
+training 4 runs, 4 in parallel
+finished Lift-v0/SAC (exit 0) at 110.1 min
+finished ReachSparse-v0/SAC (exit 0) at 110.5 min
+finished ReachObstacle-v0/SAC (exit 0) at 110.9 min
+finished ReachSparse-v0/SAC_HER (exit 0) at 118.2 min
+all done in 118.2 min, failures: 0

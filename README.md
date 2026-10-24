@@ -49,22 +49,24 @@ python trajectory_planning/simulate_planner.py --goal 0.35 -0.25 0.20 --obstacle
 
 `envs/`에 같은 로봇팔로 만든 Gymnasium 과제 환경 10종(도달, 희소 보상 도달, 장애물 회피 도달, 도메인 랜덤화,
 이동 목표 추적, 밀기, 들기, 궤적 추종, 자세 유지, 기존 물체 접근 환경)이 있고, `rl_zoo/`가 그 위에서
-stable-baselines3(SAC/TD3/PPO/A2C)로 모델 매트릭스를 학습·평가·시각화합니다.
+stable-baselines3(SAC/TD3/PPO/A2C, 희소 보상용 SAC+HER)로 모델 매트릭스를 학습·평가·시각화합니다.
 
-환경 10개 × 알고리즘 매트릭스로 모델 17개를 학습했고, 기존 모델 4개(PPO, Diffusion Policy, Diffusion+DR, 학습 궤적 플래너)와 합쳐 21개입니다. 아래는 환경별 최고 모델입니다 (20 에피소드, 결정적 정책, MuJoCo 롤아웃).
+환경 10개 × 알고리즘 매트릭스로 모델 18개를 학습했고, 기존 모델 4개(PPO, Diffusion Policy, Diffusion+DR, 학습 궤적 플래너)와 합쳐 22개입니다. 아래는 환경별 최고 모델입니다 (20 에피소드, 결정적 정책, MuJoCo 롤아웃).
 
 | 환경 | 과제 | 무작위 성공률 | 최고 모델 | 성공률 | 평균 리턴 |
 |---|---|---|---|---|---|
 | `Reach-v0` | 무작위 목표 위치에 EE 도달 | 0% | SAC (100k) / A2C 0%, PPO 0%, TD3 30% | **55%** | 275 |
-| `ReachSparse-v0` | Reach와 같은 과제, 희소 보상 | 0% | PPO (300k) / SAC 0% | **0%** | 0 |
-| `ReachObstacle-v0` | 시작-목표 사이 기둥(4 cm × 30 cm)을 피해 도달, 접촉 시 패널티·실패 | 0% | SAC (100k) / PPO 0% | **0%** | -33 |
+| `ReachSparse-v0` | Reach와 같은 과제, 희소 보상 | 0% | SAC_HER (300k) / PPO 0%, SAC 15% | **65%** | 117 |
+| `ReachObstacle-v0` | 시작-목표 사이 기둥(4 cm × 30 cm)을 피해 도달, 접촉 시 패널티·실패 | 0% | SAC (300k) / PPO 0% | **30%** | 164 |
 | `ReachDR-v0` | Reach + 질량·댐핑·마찰 ±20~30 %, 행동 스케일 ±15 %, 관측 노이즈 | 0% | SAC (100k) / PPO 10% | **75%** | 363 |
 | `ReachMoving-v0` | 반지름 5~10 cm 원을 1~2 rad/s로 도는 목표 추적 | 0% | SAC (100k) | **80%** | 389 |
 | `Push-v0` | 바닥의 상자(6 cm)를 10~18 cm 떨어진 목표로 밀기 | 0% | SAC (100k) | **70%** | 213 |
-| `Lift-v0` | 상자를 잡아 15 cm 이상 들기, 그리퍼 열기/닫기 포함 | 0% | SAC (100k) | **0%** | 91 |
+| `Lift-v0` | 상자를 잡아 15 cm 이상 들기, 그리퍼 열기/닫기 포함 | 0% | SAC (300k) | **35%** | 462 |
 | `TrackTrajectory-v0` | 무작위 2초 관절 궤적 추종 | 0% | PPO (300k) / SAC 50% | **80%** | 83 |
 | `HoldPose-v0` | 0.5초마다 손목에 5~15 N 외력, 목표 자세 유지 | 0% | PPO (300k) | **90%** | 161 |
-| `ApproachObjects-v0` | 기존 DomainRandomizedEnv: 무작위 물체 2개에 접근, 토크 6, 동역학 랜덤화 | 5% | SAC (100k) | **25%** | 273 |
+| `ApproachObjects-v0` | 기존 DomainRandomizedEnv: 무작위 물체 2개에 접근, 토크 6, 동역학 랜덤화 | 15% | SAC (100k) | **25%** | 273 |
+
+![zoo success](results_zoo/zoo_success.png)
 
 | Push-v0 / SAC | ReachMoving-v0 / SAC | HoldPose-v0 / PPO |
 |---|---|---|
