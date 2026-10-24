@@ -7,7 +7,7 @@ from __future__ import annotations
 import mujoco
 import numpy as np
 
-from tp_core import ArmKinematics, SplineBasis, build_model
+from tp_core import MAX_OBS, ArmKinematics, SplineBasis, build_model
 
 METHOD_COLORS = {  # categorical slots in fixed order (validated palette)
     "learned": "#2a78d6",
@@ -31,13 +31,17 @@ class SimScene:
         self.kp, self.kd = kp, kd
         self.qadr, self.dadr = self.kin.qpos_adr, self.kin.dof_adr
         self.ee_body = self.kin.ee_body
-        self.obstacle_body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "obstacle")
-        self.obstacle_geom = int(m.body_geomadr[self.obstacle_body])
+        self.obstacle_bodies = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"obstacle_{j}") for j in range(MAX_OBS)]
+        self.obstacle_geoms = [int(m.body_geomadr[b]) for b in self.obstacle_bodies]
+        self.active_obstacle_geoms = list(self.obstacle_geoms)
+        self._obst_contype = m.geom_contype[self.obstacle_geoms].copy()
+        self._obst_conaff = m.geom_conaffinity[self.obstacle_geoms].copy()
         self.goal_mocap = int(m.body_mocapid[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "goal")])
         ground = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, "ground")
         base_geoms = [g for g in self.kin.robot_geoms if g not in self.kin.moving_geoms]
         self.moving = set(self.kin.moving_geoms)
-        self.hazards = {self.obstacle_geom: "obstacle", ground: "ground", **{g: "base" for g in base_geoms}}
+        self.hazards = {**{g: "obstacle" for g in self.obstacle_geoms}, ground: "ground",
+                        **{g: "base" for g in base_geoms}}
 
         # actuators driving the arm joints / the fingers
         trn = m.actuator_trnid[:, 0]
@@ -47,10 +51,25 @@ class SimScene:
         self.gear = m.actuator_gear[:, 0].copy()
         self._M = np.zeros((m.nv, m.nv))
 
-    def set_problem(self, q0, goal, obs_xy):
+    def set_problem(self, q0, goal, obs):
+        """obs: (MAX_OBS, 4) rows (x, y, radius, height); height 0 = empty slot (hidden, no collision)."""
         m, d = self.model, self.data
         mujoco.mj_resetData(m, d)
-        m.body_pos[self.obstacle_body, :2] = obs_xy
+        obs = np.asarray(obs, dtype=np.float64).reshape(-1, 4)
+        self.active_obstacle_geoms = []
+        for j, (b, g) in enumerate(zip(self.obstacle_bodies, self.obstacle_geoms)):
+            x, y, r, h = obs[j] if j < len(obs) else (0, 0, 0, 0)
+            if h > 0:
+                m.body_pos[b] = [x, y, h / 2]
+                m.geom_size[g] = [r, h / 2, 0.0]
+                m.geom_rbound[g] = np.hypot(r, h / 2)
+                m.geom_contype[g], m.geom_conaffinity[g] = self._obst_contype[j], self._obst_conaff[j]
+                m.geom_rgba[g, 3] = 1.0
+                self.active_obstacle_geoms.append(g)
+            else:
+                m.body_pos[b] = [2.0 + j, 2.0, -1.0]
+                m.geom_contype[g], m.geom_conaffinity[g] = 0, 0
+                m.geom_rgba[g, 3] = 0.0
         d.qpos[self.qadr] = q0
         d.mocap_pos[self.goal_mocap] = goal
         mujoco.mj_forward(m, d)
@@ -83,13 +102,13 @@ class SimScene:
 
     def _obstacle_distance(self):
         fromto = np.zeros(6)
-        return min(mujoco.mj_geomDistance(self.model, self.data, g, self.obstacle_geom, 0.5, fromto)
-                   for g in self.moving)
+        return min(mujoco.mj_geomDistance(self.model, self.data, g, o, 0.5, fromto)
+                   for g in self.moving for o in self.active_obstacle_geoms)
 
-    def rollout(self, ctrl_pts: np.ndarray, basis: SplineBasis, q0, goal, obs_xy, settle=0.5,
+    def rollout(self, ctrl_pts: np.ndarray, basis: SplineBasis, q0, goal, obs, settle=0.5,
                 frame_cb=None, frame_every=17, success_tol=0.02):
         """Track the spline defined by ctrl_pts (K,4). Returns (metrics dict, log dict)."""
-        self.set_problem(q0, goal, obs_xy)
+        self.set_problem(q0, goal, obs)
         m, d = self.model, self.data
         dt = m.opt.timestep
         n_steps = int(round((basis.duration + settle) / dt))
@@ -142,10 +161,10 @@ class SimScene:
 # --------------------------------------------------------------------------- #
 def default_camera():
     cam = mujoco.MjvCamera()
-    cam.lookat[:] = [0.15, 0.0, 0.15]
-    cam.distance = 1.35
+    cam.lookat[:] = [0.12, 0.0, 0.27]   # high enough to keep lift-over paths (up to ~0.7 m) in frame
+    cam.distance = 1.75
     cam.azimuth = 150
-    cam.elevation = -28
+    cam.elevation = -24
     return cam
 
 

@@ -7,7 +7,9 @@
 
 Usage:
     python trajectory_planning/visualize_planner.py --n 3 --methods learned linear
+    python trajectory_planning/visualize_planner.py --problems 1 7 11 --methods learned trajopt linear
     python trajectory_planning/visualize_planner.py --viewer --methods learned
+    python trajectory_planning/visualize_planner.py --obstacles 1 1 --fixed-size      # v1 scenes
 """
 import argparse
 import time
@@ -18,7 +20,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-from tp_core import ROOT, ProblemSampler, TrajectoryCost, load_planner
+from tp_core import MAX_OBS, ROOT, ProblemSampler, TrajectoryCost, load_planner, obstacle_mask
 from tp_sim import METHOD_COLORS, SimScene, add_polyline, default_camera, hex_rgba
 from evaluate_planner import METHODS, make_planners
 
@@ -35,6 +37,7 @@ def record_gif(sim, cost, planners, methods, q0, goal, obs, path, width=480, hei
     frame_every = max(1, int(round(1.0 / fps / sim.model.opt.timestep)))
     font = ImageFont.load_default(size=14)
     per_method = {}
+    n_act = int(obstacle_mask(obs).sum())
     for m in methods:
         ctrl, dt = planners[m](q0[None], goal[None], obs[None])
         plan_pts = planned_ee_path(sim, cost, ctrl)[0]
@@ -48,7 +51,8 @@ def record_gif(sim, cost, planners, methods, q0, goal, obs, path, width=480, hei
             img = Image.fromarray(renderer.render())
             draw = ImageDraw.Draw(img)
             draw.rectangle([0, 0, width, 22], fill=(255, 255, 255))
-            draw.text((8, 3), f"{m}   plan {dt*1000:.0f} ms   t={t:.2f}s", fill=(20, 20, 20), font=font)
+            draw.text((8, 3), f"{m}   {n_act} pole{'s' if n_act > 1 else ''}   plan {dt*1000:.0f} ms   t={t:.2f}s",
+                      fill=(20, 20, 20), font=font)
             frames.append(img)
 
         metrics, _ = sim.rollout(ctrl[0].numpy(), cost.basis, q0.numpy(), goal.numpy(), obs.numpy(),
@@ -89,7 +93,7 @@ def run_viewer(sim, cost, planners, methods, problems):
                 ctrl, _ = planners[m](q0[None], goal[None], obs[None])
                 plan_pts = planned_ee_path(sim, cost, ctrl)[0]
                 color = hex_rgba(METHOD_COLORS[m])
-                print(f"problem {i} - {m}")
+                print(f"problem {i} ({int(obstacle_mask(obs).sum())} poles) - {m}")
                 wall0 = time.time()
 
                 def on_frame(t, ee_hist):
@@ -115,6 +119,11 @@ def main():
     p.add_argument("--n", type=int, default=3)
     p.add_argument("--seed", type=int, default=2026, help="same seed as evaluate_planner -> same problems")
     p.add_argument("--start", type=int, default=0, help="index of the first test problem to show")
+    p.add_argument("--problems", type=int, nargs="+", default=None,
+                   help="explicit test-problem indices (overrides --start/--n)")
+    p.add_argument("--obstacles", type=int, nargs=2, default=[1, MAX_OBS], metavar=("LO", "HI"),
+                   help="number of poles per problem is uniform in [LO, HI] (same as evaluate_planner)")
+    p.add_argument("--fixed-size", action="store_true", help="v1 poles (4 cm x 30 cm) instead of random sizes")
     p.add_argument("--methods", nargs="+", default=["learned", "linear"], choices=METHODS)
     p.add_argument("--out", type=str, default=str(ROOT / "results_tp" / "videos"))
     p.add_argument("--viewer", action="store_true", help="interactive MuJoCo viewer instead of GIFs")
@@ -124,9 +133,11 @@ def main():
     sim = SimScene()
     net, cfg = load_planner(args.model, sim.kin)
     cost = TrajectoryCost(sim.kin, cfg)
-    q0, goal, obs = ProblemSampler(sim.kin, cost, seed=args.seed).sample(args.start + args.n)
+    indices = args.problems if args.problems else list(range(args.start, args.start + args.n))
+    sampler = ProblemSampler(sim.kin, cost, seed=args.seed, n_obs=tuple(args.obstacles), fixed_size=args.fixed_size)
+    q0, goal, obs = sampler.sample(max(indices) + 1)
     planners = make_planners(net, cost)
-    problems = [(q0[i], goal[i], obs[i]) for i in range(args.start, args.start + args.n)]
+    problems = [(q0[i], goal[i], obs[i]) for i in indices]
     for m in args.methods:  # warm-up so the displayed planning time excludes first-call overhead
         planners[m](q0[:1], goal[:1], obs[:1])
 
@@ -136,8 +147,7 @@ def main():
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    for k, (a, b, c) in enumerate(problems):
-        idx = args.start + k
+    for idx, (a, b, c) in zip(indices, problems):
         path = out / f"problem_{idx:03d}_{'_vs_'.join(m.replace('+', '_') for m in args.methods)}.gif"
         res = record_gif(sim, cost, planners, args.methods, a, b, c, path)
         print(f"saved {path}  " + "  ".join(f"{m}: {'ok' if r['success'] else 'fail'}" for m, r in res.items()))

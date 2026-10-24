@@ -2,58 +2,90 @@
   "n_problems": 300,
   "seed": 2026,
   "model": "C:\\Users\\qesdf\\.mujoco\\models_tp\\planner.pt",
+  "obstacles": {
+    "n_obs": [
+      1,
+      3
+    ],
+    "fixed_size": false,
+    "count": {
+      "1": 119,
+      "2": 102,
+      "3": 79
+    }
+  },
   "summary": {
     "learned": {
-      "success_rate": 1.0,
+      "success_rate": 0.9966666666666667,
       "reach_rate": 1.0,
-      "collision_rate": 0.0,
-      "final_err_mm_median": 0.1257807871019524,
-      "min_obstacle_dist_cm_median": 7.807299059526258,
-      "ee_path_len_m_mean": 1.268739242224692,
-      "plan_jerk_median": 122.65434646606445,
-      "track_rmse_deg_mean": 0.09484112743081216,
+      "collision_rate": 0.0033333333333333335,
+      "final_err_mm_median": 0.12748274172651622,
+      "min_obstacle_dist_cm_median": 8.480904992758058,
+      "ee_path_len_m_mean": 1.3240929318351036,
+      "plan_jerk_median": 164.41631317138672,
+      "track_rmse_deg_mean": 0.09774829758701313,
       "torque_sat_frac_mean": 0.0,
-      "latency_ms_median": 66.71224999809056,
-      "batch_plan_ms_per_problem": 1.2349176666612038
+      "latency_ms_median": 101.2556499999846,
+      "batch_plan_ms_per_problem": 2.1225330000015674,
+      "success_by_n_obs": {
+        "1": 1.0,
+        "2": 0.9901960784313726,
+        "3": 1.0
+      }
     },
     "learned+refine": {
       "success_rate": 1.0,
       "reach_rate": 1.0,
       "collision_rate": 0.0,
-      "final_err_mm_median": 0.8773579169110516,
-      "min_obstacle_dist_cm_median": 5.034082930027381,
-      "ee_path_len_m_mean": 1.2478816923975664,
-      "plan_jerk_median": 93.89273071289062,
-      "track_rmse_deg_mean": 0.08855917369262709,
+      "final_err_mm_median": 0.8501651840157691,
+      "min_obstacle_dist_cm_median": 4.947766081873471,
+      "ee_path_len_m_mean": 1.3080047761101385,
+      "plan_jerk_median": 115.38925170898438,
+      "track_rmse_deg_mean": 0.09032282793068182,
       "torque_sat_frac_mean": 0.0,
-      "latency_ms_median": 469.77814999991097,
-      "batch_plan_ms_per_problem": 18.912899999995716
+      "latency_ms_median": 475.4101000007722,
+      "batch_plan_ms_per_problem": 27.453981333328557,
+      "success_by_n_obs": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      }
     },
     "trajopt": {
       "success_rate": 1.0,
       "reach_rate": 1.0,
       "collision_rate": 0.0,
-      "final_err_mm_median": 0.8050089225873751,
-      "min_obstacle_dist_cm_median": 5.413090474858107,
-      "ee_path_len_m_mean": 1.241497639658913,
-      "plan_jerk_median": 97.4000015258789,
-      "track_rmse_deg_mean": 0.07827642295122283,
+      "final_err_mm_median": 0.8087616414088339,
+      "min_obstacle_dist_cm_median": 5.07902534877683,
+      "ee_path_len_m_mean": 1.3025301490512144,
+      "plan_jerk_median": 114.28994750976562,
+      "track_rmse_deg_mean": 0.08107536097177578,
       "torque_sat_frac_mean": 0.0,
-      "latency_ms_median": 5685.203200000615,
-      "batch_plan_ms_per_problem": 617.7438906666672
+      "latency_ms_median": 7253.101250000327,
+      "batch_plan_ms_per_problem": 1061.2803319999998,
+      "success_by_n_obs": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      }
     },
     "linear": {
-      "success_rate": 0.7033333333333334,
-      "reach_rate": 0.89,
-      "collision_rate": 0.2966666666666667,
-      "final_err_mm_median": 0.11828139687839323,
-      "min_obstacle_dist_cm_median": 4.658425074621041,
-      "ee_path_len_m_mean": 1.184098525506303,
-      "plan_jerk_median": 2093.24462890625,
-      "track_rmse_deg_mean": 3.5380966163296566,
-      "torque_sat_frac_mean": 0.046535999999999994,
-      "latency_ms_median": 82.8442999991239,
-      "batch_plan_ms_per_problem": 1.4197403333309921
+      "success_rate": 0.7,
+      "reach_rate": 0.8633333333333333,
+      "collision_rate": 0.3,
+      "final_err_mm_median": 0.12190088112730647,
+      "min_obstacle_dist_cm_median": 4.6871128046678265,
+      "ee_path_len_m_mean": 1.2093235686640693,
+      "plan_jerk_median": 2576.8836669921875,
+      "track_rmse_deg_mean": 4.910899254911887,
+      "torque_sat_frac_mean": 0.06896266666666667,
+      "latency_ms_median": 74.2616999996244,
+      "batch_plan_ms_per_problem": 1.414046333332711,
+      "success_by_n_obs": {
+        "1": 0.7815126050420168,
+        "2": 0.6764705882352942,
+        "3": 0.6075949367088608
+      }
     }
   }
 }

@@ -1,0 +1,19 @@
+test problems: 300, poles per problem: 1: 300
+[learned] planning 300 problems ...
+[learned] MuJoCo rollouts ...
+[learned] done (34.9s)
+[linear] planning 300 problems ...
+[linear] MuJoCo rollouts ...
+[linear] done (36.8s)
+
+| method | success | reach<2cm | collision | median err (mm) | median clearance (cm) | EE path (m) | median jerk | track RMSE (deg) | latency (ms) |
+|---|---|---|---|---|---|---|---|---|---|
+| learned | 99.7% | 100.0% | 0.3% | 0.12 | 8.76 | 1.286 | 162.9 | 0.10 | 79.2 |
+| linear | 71.7% | 87.0% | 28.3% | 0.12 | 5.58 | 1.191 | 2487.2 | 3.51 | 71.2 |
+
+| method | 1 pole (n=300) |
+|---|---|
+| learned | 99.7% |
+| linear | 71.7% |
+
+saved results to results_tp\v1_distribution
