@@ -1,0 +1,26 @@
+{
+ "env_id": "Lift-v0",
+ "algo": "SAC",
+ "timesteps": 100000,
+ "seed": 0,
+ "train_time_s": 2707.916756629944,
+ "obs_dim": 23,
+ "act_dim": 5,
+ "algo_kwargs": {
+  "learning_rate": 0.0003,
+  "buffer_size": 200000,
+  "learning_starts": 2000,
+  "batch_size": 256,
+  "tau": 0.005,
+  "gamma": 0.98,
+  "train_freq": 1,
+  "gradient_steps": 1,
+  "policy_kwargs": {
+   "net_arch": [
+    256,
+    256
+   ],
+   "use_sde": false
+  }
+ }
+}

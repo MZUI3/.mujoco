@@ -1,0 +1,19 @@
+training 17 runs, 9 in parallel
+finished Reach-v0/A2C (exit 0) at 9.1 min
+finished Reach-v0/PPO (exit 0) at 12.6 min
+finished ReachSparse-v0/PPO (exit 0) at 12.7 min
+finished ReachObstacle-v0/PPO (exit 0) at 12.7 min
+finished ReachDR-v0/PPO (exit 0) at 21.7 min
+finished Reach-v0/TD3 (exit 0) at 29.5 min
+finished TrackTrajectory-v0/PPO (exit 0) at 42.1 min
+finished ReachObstacle-v0/SAC (exit 0) at 45.8 min
+finished Reach-v0/SAC (exit 0) at 46.1 min
+finished ReachSparse-v0/SAC (exit 0) at 46.2 min
+finished ReachDR-v0/SAC (exit 0) at 46.3 min
+finished HoldPose-v0/PPO (exit 0) at 53.4 min
+finished ReachMoving-v0/SAC (exit 0) at 57.7 min
+finished Lift-v0/SAC (exit 0) at 58.1 min
+finished Push-v0/SAC (exit 0) at 58.2 min
+finished TrackTrajectory-v0/SAC (exit 0) at 64.4 min
+finished ApproachObjects-v0/SAC (exit 0) at 85.4 min
+all done in 85.4 min, failures: 0
