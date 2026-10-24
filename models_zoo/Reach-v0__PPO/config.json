@@ -1,0 +1,25 @@
+{
+ "env_id": "Reach-v0",
+ "algo": "PPO",
+ "timesteps": 300000,
+ "seed": 0,
+ "train_time_s": 742.424394607544,
+ "obs_dim": 17,
+ "act_dim": 4,
+ "algo_kwargs": {
+  "learning_rate": 0.0003,
+  "n_steps": 2048,
+  "batch_size": 64,
+  "n_epochs": 10,
+  "gamma": 0.98,
+  "gae_lambda": 0.95,
+  "clip_range": 0.2,
+  "ent_coef": 0.0,
+  "policy_kwargs": {
+   "net_arch": [
+    256,
+    256
+   ]
+  }
+ }
+}

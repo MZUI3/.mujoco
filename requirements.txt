@@ -6,3 +6,5 @@ matplotlib
 tqdm
 scipy
 stable-baselines3
+pandas
+pillow
