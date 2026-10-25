@@ -1,7 +1,7 @@
 # MuJoCo Manipulator Learning
 
 **장애물이 있는 작업공간에서 4자유도 로봇팔의 충돌 없는 궤적을 100 ms 안에 만드는 학습 플래너**와,
-같은 로봇으로 만든 **RL 과제 환경 10종 + 벤치마크**, **Diffusion Policy 파이프라인**을 담은 저장소입니다.
+같은 로봇으로 만든 **RL 과제 환경 11종 + 벤치마크**, **Diffusion Policy 파이프라인**을 담은 저장소입니다.
 모든 결과는 MuJoCo 동역학 시뮬레이션(접촉 포함)에서 실제로 궤적을 추종해 측정했습니다.
 
 ![learned vs straight line](results_tp/videos/problem_004_learned_vs_linear.gif)
@@ -74,10 +74,10 @@ python trajectory_planning/simulate_planner.py --goal 0.35 -0.25 0.20 --obstacle
 
 ---
 
-## 4. RL 과제 환경 10종과 벤치마크
+## 4. RL 과제 환경 11종과 벤치마크
 
-같은 로봇팔로 Gymnasium 과제 환경 10종을 만들었습니다(`envs/`, `gym.make("Yang/<id>")`).
-도달·희소 보상·장애물 회피·도메인 랜덤화·이동 목표·밀기·들기·궤적 추종·자세 유지·기존 물체 접근 환경이고,
+같은 로봇팔로 Gymnasium 과제 환경 11종을 만들었습니다(`envs/`, `gym.make("Yang/<id>")`).
+도달·희소 보상·장애물 회피(기둥 1개 고정 / 기둥 1~3개 가변)·도메인 랜덤화·이동 목표·밀기·들기·궤적 추종·자세 유지·기존 물체 접근 환경이고,
 한 베이스 클래스 위에서 `_task_reset / _obs / _reward / _success` 네 메서드로 과제를 정의합니다.
 
 | Push-v0 / SAC | ReachMoving-v0 / SAC | HoldPose-v0 / PPO |
@@ -102,16 +102,28 @@ python trajectory_planning/simulate_planner.py --goal 0.35 -0.25 0.20 --obstacle
 
 - 같은 벽시계 시간에서 off-policy(SAC)가 on-policy(PPO/A2C)보다 도달 과제를 훨씬 잘 풉니다. 반대로 매 step 보상이 밀도 있는 궤적 추종·자세 유지는 PPO가 더 좋았습니다.
 - 희소 보상 도달은 예산을 3배로 늘려도 15%였지만 **HER(목표 재라벨링)**을 붙이자 65%가 됐습니다. 알고리즘 선택이 예산보다 중요했던 사례입니다.
-- RL만으로는 장애물 회피 도달이 30%에 그칩니다(300k step). 같은 과제를 위의 학습 플래너는 99.7% 풉니다. 두 접근을 잇는 것이 다음 과제입니다.
+- RL만으로는 장애물 회피 도달이 30%에 그칩니다(300k step). 같은 과제를 위의 학습 플래너는 99.7% 풉니다. 두 접근을 잇는 실험이 아래 문단입니다.
 
-전체 매트릭스(환경 10 × 알고리즘, 모델 28개)와 사용법: [rl_zoo/README.md](rl_zoo/README.md)
+전체 매트릭스(환경 11 × 알고리즘, 모델 31개)와 사용법: [rl_zoo/README.md](rl_zoo/README.md)
 
 ```bash
-python envs/manipulator_tasks.py                      # 환경 10개 스모크 테스트
+python envs/manipulator_tasks.py                      # 환경 11개 스모크 테스트
 python rl_zoo/train_zoo.py --all --parallel 9         # 모델 매트릭스 학습
 python rl_zoo/evaluate_zoo.py --episodes 20           # 전체 평가 표 + 그래프
 python rl_zoo/visualize_zoo.py --run Reach-v0__SAC    # GIF (--viewer 로 MuJoCo 뷰어)
 ```
+
+**플래너 → RL 환경 브리지.** 플래너의 문제 분포(기둥 1~3개, 크기 가변)를 그대로 쓰는 11번째 환경 `ReachMultiObstacle-v0`를 만들고,
+플래너의 B-spline 궤적을 환경의 토크 행동으로 추종한 데모 2000개(`rl_zoo/collect_planner_demos.py`)로 정책을 학습했습니다.
+같은 20문제에서 SAC 100k는 **0%**(최종 거리 11 cm), 순수 행동 복제는 **0%**였지만 — 전문가 행동이 관측에 없는 시작 자세·경과 시간에
+의존해 라벨이 관측만으로 정해지지 않고, 작은 토크 오차가 적분되어 궤적을 벗어나기 때문 — 시간·q0 문맥을 붙이고 **DAgger**로 학습자가
+방문한 상태를 플래너 추종기로 라벨링하자 **25%**(최종 거리 4.7 cm)가 됐습니다. 데모를 만든 플래너 자체는 같은 문제에서 100%이므로
+남은 간극은 256×2 MLP가 강성 피드백 제어기를 근사하는 한계입니다. 표와 재현 명령: [results_zoo/planner_rl_bridge.md](results_zoo/planner_rl_bridge.md),
+설명: [rl_zoo/README.md](rl_zoo/README.md#플래너-데모로-학습한-정책-reachmultiobstacle-v0).
+
+| ReachMultiObstacle-v0 / BC + DAgger (25%) | ReachMultiObstacle-v0 / SAC 100k (0%) |
+|---|---|
+| ![bc](results_zoo/videos/ReachMultiObstacle-v0__BC.gif) | ![sac](results_zoo/videos/ReachMultiObstacle-v0__SAC.gif) |
 
 ## 5. Diffusion Policy 파이프라인
 
@@ -133,8 +145,8 @@ python evaluate_compare.py --diffusion_model models/diffusion_policy.pt \
 .mujoco/
 ├── trajectory_planning/          # 학습 궤적 플래너: tp_core(씬·FK·비용·네트워크), tp_sim(MuJoCo 추종·지표), train/evaluate/visualize/simulate
 ├── models_tp/, results_tp/       # 플래너 체크포인트, 평가 표, 그래프, GIF
-├── envs/                         # Gymnasium 과제 환경 10종 (manipulator_tasks.py), HER용 goal 래퍼
-├── rl_zoo/                       # 벤치마크 학습/평가/시각화 + README
+├── envs/                         # Gymnasium 과제 환경 11종 (manipulator_tasks.py), HER용 goal 래퍼, BC용 에피소드 문맥 래퍼
+├── rl_zoo/                       # 벤치마크 학습/평가/시각화 + 플래너 데모 수집(collect_planner_demos)·BC/DAgger(train_bc)·브리지 비교(evaluate_bridge) + README
 ├── models_zoo/, results_zoo/     # zoo 모델(SB3), 평가 표, 그래프, GIF
 ├── manipulator_env.py            # 기존 Gymnasium 환경 (DomainRandomizedEnv)
 ├── collect_trajectories.py, train_diffusion_policy.py, validate_policy.py, policy_node.py, train_dr_policy.py

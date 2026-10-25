@@ -1,0 +1,53 @@
+{
+ "env_id": "ReachMultiObstacle-v0",
+ "algo": "BC_naive",
+ "timesteps": 379400,
+ "seed": 0,
+ "train_time_s": 75.48834538459778,
+ "goal_wrapper": false,
+ "episode_context": false,
+ "obs_dim": 29,
+ "act_dim": 4,
+ "algo_kwargs": {
+  "hidden": [
+   256,
+   256
+  ],
+  "epochs": 30,
+  "batch": 1024,
+  "lr": 0.001,
+  "weight_decay": 0.0,
+  "val_frac": 0.05,
+  "dagger_iters": 0,
+  "dagger_episodes": 500,
+  "dagger_epochs": 15,
+  "dagger_lr": 0.001,
+  "dagger_noise": 0.0,
+  "dagger_beta": 0.0,
+  "track": "time",
+  "kp": 400.0,
+  "kd": 40.0,
+  "demos": "C:/Users/qesdf/.mujoco/data/planner_demos.npz",
+  "n_demo_episodes": 1997,
+  "n_demo_transitions": 399400,
+  "n_train_transitions": 379400,
+  "final_train_mse": 1.421021569801581e-06,
+  "final_val_mse": 3.6250825360184535e-05,
+  "dagger_rollout_stats": [],
+  "demo_meta": {
+   "env_id": "ReachMultiObstacle-v0",
+   "n_problems": 2000,
+   "seed": 0,
+   "planner": "models_tp\\planner.pt",
+   "duration": 2.0,
+   "kp": 400.0,
+   "kd": 40.0,
+   "exec_noise": 0.0,
+   "keep_all": false,
+   "all_success_rate": 0.9985,
+   "all_collision_rate": 0.0015,
+   "all_mean_final_dist": 0.0006671091781917624,
+   "all_mean_return": -125.41164260368518
+  }
+ }
+}

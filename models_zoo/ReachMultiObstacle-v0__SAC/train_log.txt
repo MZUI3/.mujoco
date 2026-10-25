@@ -1,0 +1,2 @@
+[ReachMultiObstacle-v0/SAC] 100000 steps in 20.8 min | success 0% return -7.1
+exit 0
