@@ -25,17 +25,26 @@ from rl_zoo.zoo_config import MODELS_DIR, RESULTS_DIR, base_algo
 
 
 def load_policy(run):
-    import stable_baselines3 as sb3
     d = MODELS_DIR / run
     cfg = json.loads((d / "config.json").read_text(encoding="utf-8"))
+    if cfg["algo"].startswith("BC"):   # behaviour cloning on planner demos (rl_zoo/train_bc.py)
+        from rl_zoo.train_bc import load_bc
+        model = load_bc(d)
+        return (cfg["env_id"], cfg["algo"], lambda obs: model.predict(obs, deterministic=True)[0],
+                "context" if cfg.get("episode_context") else False)
+    import stable_baselines3 as sb3
     env = _env(cfg["env_id"], cfg.get("goal_wrapper", False), None) if cfg.get("goal_wrapper") else None
     model = getattr(sb3, base_algo(cfg["algo"])).load(d / "model.zip", env=env, device="cpu")
     return cfg["env_id"], cfg["algo"], lambda obs: model.predict(obs, deterministic=True)[0], cfg.get("goal_wrapper", False)
 
 
 def _env(env_id, goal_wrapper, render_mode):
+    """goal_wrapper: False | True (HER goal-conditioned obs) | "context" (BC episode context: time, q0)."""
     env = make_env(env_id, render_mode=render_mode)
-    if goal_wrapper:
+    if goal_wrapper == "context":
+        from envs.episode_context_wrapper import EpisodeContextWrapper
+        env = EpisodeContextWrapper(env)
+    elif goal_wrapper:
         from envs.goal_wrapper import GoalObsWrapper
         env = GoalObsWrapper(env, sparse="Sparse" in env_id)
     return env
@@ -112,7 +121,7 @@ def main():
 
     if args.all:
         for d in sorted(MODELS_DIR.iterdir()):
-            if not (d / "model.zip").exists():
+            if not ((d / "model.zip").exists() or (d / "model.pt").exists()):
                 continue
             env_id, algo, pol, gw = load_policy(d.name)
             res = record(env_id, algo, pol, args.episodes, out / f"{d.name}.gif", seed=args.seed, goal_wrapper=gw)

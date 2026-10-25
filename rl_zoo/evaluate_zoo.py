@@ -21,12 +21,24 @@ import numpy as np
 from envs import TASK_DESCRIPTIONS, TASKS, make_env
 from rl_zoo.zoo_config import CORE, MODELS_DIR, RESULTS_DIR, base_algo
 
-ALGO_COLORS = {"SAC": "#2a78d6", "SAC_HER": "#7c4dff", "TD3": "#1baf7a", "PPO": "#eb6834", "A2C": "#eda100", "random": "#9a9a9a"}
+ALGO_COLORS = {"SAC": "#2a78d6", "SAC_HER": "#7c4dff", "TD3": "#1baf7a", "PPO": "#eb6834", "A2C": "#eda100",
+               "BC": "#c2185b", "BC_naive": "#e58fb3", "random": "#9a9a9a"}
+
+
+def model_file(run_dir: Path):
+    """model.zip (SB3) or model.pt (BC); None if the directory holds no model."""
+    for name in ("model.zip", "model.pt"):
+        if (run_dir / name).exists():
+            return run_dir / name
+    return None
 
 
 def load_model(run_dir: Path):
-    import stable_baselines3 as sb3
     cfg = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    if cfg["algo"].startswith("BC"):   # behaviour cloning on planner demos (rl_zoo/train_bc.py), torch checkpoint
+        from rl_zoo.train_bc import load_bc
+        return load_bc(run_dir), cfg
+    import stable_baselines3 as sb3
     env = None
     if cfg.get("goal_wrapper"):   # HerReplayBuffer models need the (goal-conditioned) env at load time
         from envs.goal_wrapper import GoalObsWrapper
@@ -35,11 +47,14 @@ def load_model(run_dir: Path):
     return model, cfg
 
 
-def rollouts(env_id, policy, episodes, seed, goal_wrapper=False):
+def rollouts(env_id, policy, episodes, seed, goal_wrapper=False, context_wrapper=False):
     env = make_env(env_id)
     if goal_wrapper:
         from envs.goal_wrapper import GoalObsWrapper
         env = GoalObsWrapper(env, sparse="Sparse" in env_id)
+    if context_wrapper:               # BC policies trained with episode context (time, q0)
+        from envs.episode_context_wrapper import EpisodeContextWrapper
+        env = EpisodeContextWrapper(env)
     rets, succ, dists, cols = [], [], [], []
     for ep in range(episodes):
         obs, info = env.reset(seed=seed + ep)
@@ -143,7 +158,8 @@ def plot_success(rows, path):
 
 def plot_returns(rows, path):
     envs_ = [e for e in TASKS if any(r["env_id"] == e for r in rows)]
-    fig, axes = plt.subplots(2, 5, figsize=(17, 6.5))
+    n_rows = max(1, int(np.ceil(len(envs_) / 5)))
+    fig, axes = plt.subplots(n_rows, 5, figsize=(17, 3.25 * n_rows), squeeze=False)
     for ax, e in zip(axes.flat, envs_):
         rs = [r for r in rows if r["env_id"] == e and r["mean_return"] is not None]
         names = [r["algo"] for r in rs]
@@ -173,7 +189,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     rows = []
-    run_dirs = sorted(d for d in MODELS_DIR.iterdir() if (d / "model.zip").exists())
+    run_dirs = sorted(d for d in MODELS_DIR.iterdir() if d.is_dir() and model_file(d) is not None)
     envs_used = sorted({json.loads((d / "config.json").read_text(encoding="utf-8"))["env_id"] for d in run_dirs},
                        key=list(TASKS).index)
     for e in envs_used:
@@ -184,11 +200,12 @@ def main():
         model, cfg = load_model(d)
         print(f"[{cfg['env_id']}] {cfg['algo']}", flush=True)
         r = rollouts(cfg["env_id"], lambda obs, env: model.predict(obs, deterministic=True)[0], args.episodes, args.seed,
-                     goal_wrapper=cfg.get("goal_wrapper", False))
+                     goal_wrapper=cfg.get("goal_wrapper", False), context_wrapper=cfg.get("episode_context", False))
         rows.append(dict(env_id=cfg["env_id"], algo=cfg["algo"], seed=cfg.get("seed", 0),
-                         path=str(d.relative_to(ROOT) / "model.zip").replace("\\", "/"),
+                         path=str(model_file(d).relative_to(ROOT)).replace("\\", "/"),
                          timesteps=cfg["timesteps"], train_time_s=cfg.get("train_time_s"),
-                         note=f"SB3 {cfg['algo']}, {cfg['timesteps']//1000}k steps, seed {cfg.get('seed', 0)}", **r))
+                         note=(f"{cfg['algo']} on {cfg['timesteps']//1000}k planner-demo transitions, seed {cfg.get('seed', 0)}" if cfg["algo"].startswith("BC")
+                               else f"SB3 {cfg['algo']}, {cfg['timesteps']//1000}k steps, seed {cfg.get('seed', 0)}"), **r))
     legacy = legacy_rows()
     agg = aggregate(rows)
 
@@ -221,7 +238,8 @@ def main():
                 k += r["n_seeds"]
                 succ = (f"**{r['success_rate']*100:.0f} ± {r['success_std']*100:.0f}%**" if r["n_seeds"] > 1
                         else f"**{r['success_rate']*100:.0f}%**")
-                lines.append(f"| {k} | `{e}` | {r['algo']} | {r['timesteps']//1000}k | {r['n_seeds']} | {succ} | "
+                steps = f"{r['timesteps']//1000}k" + (" demo" if r["algo"].startswith("BC") else "")
+                lines.append(f"| {k} | `{e}` | {r['algo']} | {steps} | {r['n_seeds']} | {succ} | "
                              f"{r['mean_return']:.1f} ± {r['std_return']:.1f} | {r['mean_final_dist']:.3f} | "
                              f"{r['collision_rate']*100:.0f}% | {f(r['train_time_s']/60, '.1f')} | `{r['path']}` |")
     for r in legacy:

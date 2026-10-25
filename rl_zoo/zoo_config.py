@@ -21,6 +21,7 @@ RUNS = [
     ("ReachSparse-v0", "PPO", ON),
     ("ReachObstacle-v0", "SAC", 300_000),
     ("ReachObstacle-v0", "PPO", ON),
+    ("ReachMultiObstacle-v0", "SAC", OFF),   # planner-distribution obstacle task; compare with BC on planner demos
     ("ReachDR-v0", "SAC", OFF),
     ("ReachDR-v0", "PPO", ON),
     ("ReachMoving-v0", "SAC", OFF),

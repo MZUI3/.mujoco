@@ -10,6 +10,7 @@ yang_manipulator 로봇팔(4 DoF + 그리퍼)용 Gymnasium 과제 환경 모음.
 | Reach-v0              | 무작위 목표 위치에 EE 도달 (dense)             | 17  | 4   |
 | ReachSparse-v0        | 위와 같음, 희소 보상(3 cm 안에서만 +1)          | 17  | 4   |
 | ReachObstacle-v0      | 기둥 장애물을 피해 도달, 접촉 패널티            | 21  | 4   |
+| ReachMultiObstacle-v0 | 기둥 1~3개(크기 가변)를 피해 도달, 플래너 문제 분포 | 29  | 4   |
 | ReachDR-v0            | Reach + 질량/댐핑/마찰/관측노이즈/행동스케일 랜덤 | 17  | 4   |
 | ReachMoving-v0        | 원을 그리며 움직이는 목표 추적                  | 20  | 4   |
 | Push-v0               | 바닥의 상자를 10~18 cm 떨어진 목표로 밀기       | 26  | 4   |
@@ -333,6 +334,103 @@ class ReachObstacleEnv(ReachEnv):
         return self._dist() < self.success_tol and not self._collided
 
 
+class ReachMultiObstacleEnv(ReachObstacleEnv):
+    """Reach around 1-3 poles of random size: the trajectory planner's problem distribution.
+
+    Scene and problems come straight from trajectory_planning/tp_core.py (`build_model`, `ProblemSampler`):
+    poles with radius 3-7 cm and height 15-40 cm, start/goal configurations collision-free. Observation =
+    the ReachObstacle-v0 observation + 3 slots x (x, y, radius, height), empty slots all zero. Reward and
+    success are those of ReachObstacle-v0 (contact penalty; success = within 3 cm with no contact).
+
+    reset(options={"problem": (q0, goal, obstacles)}) replays a given problem (obstacles: (3, 4) rows
+    (x, y, r, h), h = 0 for an empty slot); `env.problem` returns the current one."""
+    keep_obstacle = False
+
+    def _tp(self):
+        import sys
+        tp_dir = str(ROOT / "trajectory_planning")
+        if tp_dir not in sys.path:
+            sys.path.insert(0, tp_dir)
+        import tp_core
+        return tp_core
+
+    def _build_model(self):
+        tp = self._tp()
+        self.max_obs = tp.MAX_OBS
+        model = tp.build_model()
+        self._kin = tp.ArmKinematics(model)
+        self._cost = tp.TrajectoryCost(self._kin, tp.PlanConfig())
+        self._obst_bodies = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"obstacle_{j}") for j in range(self.max_obs)]
+        self._obst_geoms = [int(model.body_geomadr[b]) for b in self._obst_bodies]
+        self._obst_contype = model.geom_contype[self._obst_geoms].copy()
+        self._obst_conaff = model.geom_conaffinity[self._obst_geoms].copy()
+        self._active_obst = set()
+        self._pending_problem = None
+        self.obstacles = np.zeros((self.max_obs, 4))
+        return model
+
+    @property
+    def problem(self):
+        """(q0, goal, obstacles) of the current episode (copies)."""
+        return self._q0.copy(), self.goal.copy(), self.obstacles.copy()
+
+    def reset(self, seed=None, options=None):
+        self._pending_problem = options.get("problem") if options else None
+        return super().reset(seed=seed, options=options)
+
+    def _sample_problem(self):
+        tp = self._tp()
+        sampler = tp.ProblemSampler(self._kin, self._cost, seed=int(self.np_random.integers(2**31 - 1)))
+        q0, goal, obs = sampler.sample(1)
+        return q0[0].numpy().astype(np.float64), goal[0].numpy().astype(np.float64), obs[0].numpy().astype(np.float64)
+
+    def _apply_obstacles(self, obs):
+        m = self.model
+        self._active_obst = set()
+        self.obstacles = np.zeros((self.max_obs, 4))
+        for j, (b, g) in enumerate(zip(self._obst_bodies, self._obst_geoms)):
+            x, y, r, h = obs[j] if j < len(obs) else (0.0, 0.0, 0.0, 0.0)
+            if h > 0:
+                m.body_pos[b] = [x, y, h / 2]
+                m.geom_size[g] = [r, h / 2, 0.0]
+                m.geom_rbound[g] = np.hypot(r, h / 2)
+                m.geom_contype[g], m.geom_conaffinity[g] = self._obst_contype[j], self._obst_conaff[j]
+                m.geom_rgba[g, 3] = 1.0
+                self._active_obst.add(g)
+                self.obstacles[j] = [x, y, r, h]
+            else:
+                m.body_pos[b] = [2.0 + j, 2.0, -1.0]
+                m.geom_contype[g], m.geom_conaffinity[g] = 0, 0
+                m.geom_rgba[g, 3] = 0.0
+
+    def _task_reset(self):
+        if self._pending_problem is not None:
+            q0, goal, obs = (np.asarray(x, dtype=np.float64) for x in self._pending_problem)
+            self._pending_problem = None
+        else:
+            q0, goal, obs = self._sample_problem()
+        self._q0 = q0.copy()
+        self._apply_obstacles(obs.reshape(-1, 4))
+        self.data.qpos[self.arm_q] = q0
+        self.data.qvel[self.arm_v] = 0.0
+        self._set_goal(goal)
+        mujoco.mj_forward(self.model, self.data)
+
+    def _contacts(self):
+        hit, grasp = super()._contacts()      # ground contact (keep_obstacle is False here)
+        if not hit and self._active_obst:
+            d = self.data
+            for i in range(d.ncon):
+                pair = {int(d.contact[i].geom1), int(d.contact[i].geom2)}
+                if pair & self.moving_geoms and pair & self._active_obst:
+                    hit = True
+                    break
+        return hit, grasp
+
+    def _obs(self):
+        return np.concatenate(self._base_obs() + [self.obstacles.reshape(-1)])
+
+
 class ReachDREnv(ReachEnv):
     """Reach with domain randomisation: dynamics, action scale and observation noise."""
     randomize_dynamics = True
@@ -562,6 +660,7 @@ TASKS = {
     "Reach-v0": ReachEnv,
     "ReachSparse-v0": ReachSparseEnv,
     "ReachObstacle-v0": ReachObstacleEnv,
+    "ReachMultiObstacle-v0": ReachMultiObstacleEnv,
     "ReachDR-v0": ReachDREnv,
     "ReachMoving-v0": ReachMovingEnv,
     "Push-v0": PushEnv,
@@ -575,6 +674,7 @@ TASK_DESCRIPTIONS = {
     "Reach-v0": "무작위 목표 위치에 EE 도달 (dense 보상, 성공 3 cm)",
     "ReachSparse-v0": "Reach와 같은 과제, 희소 보상 (3 cm 안에서만 +1)",
     "ReachObstacle-v0": "시작-목표 사이 기둥(4 cm × 30 cm)을 피해 도달, 접촉 시 패널티·실패",
+    "ReachMultiObstacle-v0": "기둥 1~3개(반지름 3~7 cm, 높이 15~40 cm)를 피해 도달, 궤적 플래너와 같은 문제 분포, 접촉 시 패널티·실패",
     "ReachDR-v0": "Reach + 질량·댐핑·마찰 ±20~30 %, 행동 스케일 ±15 %, 관측 노이즈",
     "ReachMoving-v0": "반지름 5~10 cm 원을 1~2 rad/s로 도는 목표 추적 (성공 4 cm)",
     "Push-v0": "바닥의 상자(6 cm)를 10~18 cm 떨어진 목표로 밀기 (성공 5 cm)",

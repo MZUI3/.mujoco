@@ -1,0 +1,119 @@
+{
+ "env_id": "ReachMultiObstacle-v0",
+ "episodes": 20,
+ "seed": 10000,
+ "n_poles": [
+  1,
+  3,
+  1,
+  3,
+  3,
+  2,
+  1,
+  1,
+  1,
+  2,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  2,
+  3,
+  2,
+  1
+ ],
+ "rows": [
+  {
+   "key": "random",
+   "name": "무작위 행동",
+   "data": "-",
+   "note": "기준선",
+   "mean_return": -255.0622860835459,
+   "std_return": 61.41001836815668,
+   "success_rate": 0.0,
+   "mean_final_dist": 0.5094519016835422,
+   "collision_rate": 0.9,
+   "episodes": 20
+  },
+  {
+   "key": "SAC",
+   "name": "SAC 100k",
+   "data": "100k env steps, 21 min",
+   "note": "`models_zoo/ReachMultiObstacle-v0__SAC`",
+   "mean_return": -7.09748774290072,
+   "std_return": 47.825419136716434,
+   "success_rate": 0.0,
+   "mean_final_dist": 0.11041343376850754,
+   "collision_rate": 0.15,
+   "episodes": 20
+  },
+  {
+   "key": "BC_naive",
+   "name": "BC (순수 행동 복제, obs만)",
+   "data": "데모 1997 에피소드 / 399k 전이, 1 min",
+   "note": "`models_zoo/ReachMultiObstacle-v0__BC_naive`, MLP [256, 256], 입력 obs만",
+   "mean_return": -211.24160476153943,
+   "std_return": 73.65663615950926,
+   "success_rate": 0.0,
+   "mean_final_dist": 0.3380544084148226,
+   "collision_rate": 0.4,
+   "episodes": 20
+  },
+  {
+   "key": "BC",
+   "name": "BC + DAgger (플래너 데모 + 전문가 라벨링)",
+   "data": "데모 1997 에피소드 / 399k 전이 + DAgger 8×400 에피소드 라벨링, 14 min",
+   "note": "`models_zoo/ReachMultiObstacle-v0__BC`, MLP [256, 256], 입력 obs + 시간 + q0",
+   "mean_return": -159.34738306118237,
+   "std_return": 51.231884772290215,
+   "success_rate": 0.25,
+   "mean_final_dist": 0.04654546171320502,
+   "collision_rate": 0.1,
+   "episodes": 20
+  },
+  {
+   "key": "planner_sim",
+   "name": "학습 플래너 (SimScene.rollout, 참고)",
+   "data": "데모 없음 (self-supervised)",
+   "note": "2 ms computed-torque, 0.5 s settle; 플래너 기준(2 cm) 성공 100%, 계획 70 ms/문제",
+   "success_rate": 1.0,
+   "collision_rate": 0.0,
+   "mean_final_dist": 0.00011957551636401367,
+   "episodes": 20
+  },
+  {
+   "key": "planner_env",
+   "name": "학습 플래너 + computed torque (env.step, 데모 생성기)",
+   "data": "데모 없음 (self-supervised)",
+   "note": "10 ms 제어, BC 데모와 같은 추종기 = BC의 상한",
+   "success_rate": 1.0,
+   "collision_rate": 0.0,
+   "mean_final_dist": 0.00019484978585185904,
+   "episodes": 20,
+   "mean_return": -119.99048360114178,
+   "std_return": 46.84411954478522
+  }
+ ],
+ "context_reach_obstacle_sac": {
+  "env_id": "ReachObstacle-v0",
+  "algo": "SAC",
+  "n_seeds": 1,
+  "seeds": [
+   0
+  ],
+  "timesteps": 300000,
+  "path": "models_zoo/ReachObstacle-v0__SAC/model.zip",
+  "success_rate": 0.3,
+  "success_std": 0.0,
+  "success_min": 0.3,
+  "success_max": 0.3,
+  "mean_return": 163.94243398435475,
+  "std_return": 310.6423089239129,
+  "mean_final_dist": 0.08273166456030065,
+  "collision_rate": 0.3,
+  "train_time_s": 6643.483882188797,
+  "core": false
+ }
+}
