@@ -31,7 +31,7 @@ import numpy as np
 from gymnasium import spaces
 
 ROOT = Path(__file__).resolve().parent.parent
-ROBOT_XML = ROOT / "mujoco200_win64" / "model" / "yang" / "yang_manipulator.xml"
+ROBOT_XML = ROOT / "assets" / "yang_manipulator.xml"
 ARM_JOINTS = ["shoulder_pan", "shoulder_lift", "elbow", "wrist_roll"]
 FINGER_JOINTS = ["finger_left_joint", "finger_right_joint"]
 MOVING_BODIES = ["link2", "link3", "wrist", "gripper_base", "finger_left", "finger_right"]
