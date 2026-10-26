@@ -18,7 +18,7 @@ class DomainRandomizedEnv(gym.Env):
         self.viewer = None
 
         if xml_path is None:
-            default_path = Path(__file__).parent / "mujoco200_win64" / "model" / "yang" / "yang_manipulator.xml"
+            default_path = Path(__file__).parent / "assets" / "yang_manipulator.xml"
             if not default_path.exists():
                 raise FileNotFoundError(f"기본 모델을 찾을 수 없습니다: {default_path}")
             xml_path = str(default_path)

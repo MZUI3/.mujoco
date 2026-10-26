@@ -27,7 +27,7 @@ import torch.nn as nn
 from scipy.interpolate import BSpline
 
 ROOT = Path(__file__).resolve().parent.parent
-ROBOT_XML = ROOT / "mujoco200_win64" / "model" / "yang" / "yang_manipulator.xml"
+ROBOT_XML = ROOT / "assets" / "yang_manipulator.xml"
 
 ARM_JOINTS = ["shoulder_pan", "shoulder_lift", "elbow", "wrist_roll"]
 EE_BODY = "gripper_base"
