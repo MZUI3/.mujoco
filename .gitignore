@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+venv/
 
 # MuJoCo 2.0 binary distribution and license key (the code uses the `mujoco` 3.x pip package)
 mujoco200_win64/
