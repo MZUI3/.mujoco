@@ -16,7 +16,7 @@
 | `Push-v0` | 바닥의 상자(6 cm)를 10~18 cm 떨어진 목표로 밀기 | SAC (100k) | **58 ± 8%** (n=3) | 186 ± 21 | 10% |
 | `Reach-v0` | 무작위 목표 위치에 EE 도달 | SAC (100k) | **70 ± 11%** (n=3) | 349 ± 53 | 0% |
 | `ReachDR-v0` | Reach + 질량·댐핑·마찰 ±20~30 %, 행동 스케일 ±15 %, 관측 노이즈 | SAC (100k) | **75 ± 8%** (n=3) | 366 ± 38 | 0% |
-| `ReachMoving-v0` | 반지름 5~10 cm 원을 1~2 rad/s로 도는 목표 추적 | SAC (100k) | **90 ± 7%** (n=3) | 408 ± 21 | 0% |
+| `ReachMoving-v0` | 반지름 5\~10 cm 원을 1\~2 rad/s로 도는 목표 추적 | SAC (100k) | **90 ± 7%** (n=3) | 408 ± 21 | 0% |
 
 그 외 과제의 최고 모델 (seed 1개): ReachSparse SAC+HER 65%, ReachObstacle SAC 30%, Lift SAC 35%, TrackTrajectory PPO 80%
 
